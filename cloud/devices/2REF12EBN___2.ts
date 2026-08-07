@@ -6,7 +6,7 @@ import { Metadata } from '../thinq'
 export default class Device extends HADevice {
     constructor(HA: Connection, readonly thinq: Thinq1Device, meta: Metadata) {
         super(HA, thinq.id)
-        this.setConfig(HADevice.config(meta, { name: 'LG Washer (캡처중)' }))
+        this.setConfig(HADevice.config(meta, { name: 'LG Refrigerator  (캡처중)' }))
         thinq.on('data', (buf) => {
             console.log('RAW:', buf.length, 'bytes ->', buf.toString('hex'))
         })
