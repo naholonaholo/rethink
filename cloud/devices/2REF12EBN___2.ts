@@ -30,7 +30,7 @@ export default class Device extends HADevice {
         // 세션이 만료될 가능성에 대비해 주기적으로 재전송
         this.monTimer = setInterval(() => {
             this.thinq.send({ Cmd: 'Mon', CmdOpt: 'Start' })
-        }, 45_000)
+        }, 10_000)
     }
 
     setProperty(prop: string, mqttValue: string) {
