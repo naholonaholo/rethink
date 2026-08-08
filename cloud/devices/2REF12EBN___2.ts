@@ -80,7 +80,7 @@ export default class Device extends HADevice {
             const rapidCool = buf[3] === 0x02
             const sterilRaw = buf[4]
             const steril = sterilRaw === 0x03 ? 'power' : sterilRaw === 0x02 ? 'on' : 'off'
-            const doorOpen = buf[8] === 0x01
+            const doorOpen = buf[7] === 0x01
             const locked = buf[10] === 0x01
 
             this.publishProperty('fridge_temp', fridgeTemp)
