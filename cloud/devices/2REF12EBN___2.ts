@@ -38,6 +38,7 @@ export default class Device extends HADevice {
                         min: 0,
                         max: 6,
                         step: 1,
+                        optimistic: true,
                     },
                     freezer_temp: {
                         platform: 'number',
@@ -50,6 +51,7 @@ export default class Device extends HADevice {
                         min: -24,
                         max: -16,
                         step: 1,
+                        optimistic: true,
                     },
                     rapid_cool: {
                         platform: 'switch',
@@ -58,6 +60,7 @@ export default class Device extends HADevice {
                         command_topic: '$this/rapid_cool/set',
                         name: 'Rapid cool (특냉)',
                         icon: 'mdi:snowflake-alert',
+                        optimistic: true,
                     },
                     steril: {
                         platform: 'select',
@@ -67,6 +70,7 @@ export default class Device extends HADevice {
                         name: 'Sterilization (제균탈취)',
                         icon: 'mdi:air-purifier',
                         options: [...STERIL_MODES],
+                        optimistic: true,
                     },
                     door: {
                         platform: 'binary_sensor',
@@ -149,6 +153,11 @@ export default class Device extends HADevice {
             Format: 'B64',
             Data: buf.toString('base64'),
         })
+        // 40초 주기 폴링을 기다리지 않고, 기기가 커맨드를 처리할 시간을 준 뒤
+        // 곧바로 한 번 더 상태를 물어봐서 반영 지연을 1~2초 수준으로 줄임
+        setTimeout(() => {
+            this.thinq.send({ Cmd: 'Mon', CmdOpt: 'Start' })
+        }, 1500)
     }
 
     setProperty(prop: string, mqttValue: string) {
