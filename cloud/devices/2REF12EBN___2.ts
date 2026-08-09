@@ -5,6 +5,16 @@ import { allowExtendedType } from '@/util/casting'
 import { Metadata } from '../thinq'
 
 const STERIL_MODES = ['off', 'on', 'power'] as const
+type SterilMode = (typeof STERIL_MODES)[number]
+
+// 관측된 실제 상태를 반영한 합리적 기본값
+// (아직 첫 상태 리포트를 못 받은 상태에서 setProperty가 먼저 호출될 경우의 안전장치)
+const DEFAULT_STATE = {
+    fridgeTemp: 3,
+    freezerTemp: -20,
+    rapidCool: false,
+    steril: 'off' as SterilMode,
+}
 
 export default class Device extends HADevice {
     constructor(
@@ -18,37 +28,44 @@ export default class Device extends HADevice {
                 ...HADevice.config(meta, { name: 'LG Fridge' }),
                 components: {
                     fridge_temp: {
-                        platform: 'sensor',
+                        platform: 'number',
                         unique_id: '$deviceid-fridge_temp',
                         state_topic: '$this/fridge_temp',
+                        command_topic: '$this/fridge_temp/set',
                         name: 'Fridge temperature',
                         device_class: 'temperature',
                         unit_of_measurement: '°C',
-                        suggested_display_precision: 0,
+                        min: 0,
+                        max: 6,
+                        step: 1,
                     },
                     freezer_temp: {
-                        platform: 'sensor',
+                        platform: 'number',
                         unique_id: '$deviceid-freezer_temp',
                         state_topic: '$this/freezer_temp',
+                        command_topic: '$this/freezer_temp/set',
                         name: 'Freezer temperature',
                         device_class: 'temperature',
                         unit_of_measurement: '°C',
-                        suggested_display_precision: 0,
+                        min: -24,
+                        max: -16,
+                        step: 1,
                     },
                     rapid_cool: {
-                        platform: 'binary_sensor',
+                        platform: 'switch',
                         unique_id: '$deviceid-rapid_cool',
                         state_topic: '$this/rapid_cool',
+                        command_topic: '$this/rapid_cool/set',
                         name: 'Rapid cool (특냉)',
                         icon: 'mdi:snowflake-alert',
                     },
                     steril: {
-                        platform: 'sensor',
+                        platform: 'select',
                         unique_id: '$deviceid-steril',
                         state_topic: '$this/steril',
+                        command_topic: '$this/steril/set',
                         name: 'Sterilization (제균탈취)',
                         icon: 'mdi:air-purifier',
-                        device_class: 'enum',
                         options: [...STERIL_MODES],
                     },
                     door: {
@@ -79,9 +96,12 @@ export default class Device extends HADevice {
             const freezerTemp = -15 - buf[2]
             const rapidCool = buf[3] === 0x02
             const sterilRaw = buf[4]
-            const steril = sterilRaw === 0x03 ? 'power' : sterilRaw === 0x02 ? 'on' : 'off'
+            const steril: SterilMode = sterilRaw === 0x03 ? 'power' : sterilRaw === 0x02 ? 'on' : 'off'
             const doorOpen = buf[7] === 0x01
             const locked = buf[10] === 0x01
+
+            // Control 패킷을 만들 때 쓸 최신 상태 캐시 (기기 리포트가 유일한 진실 공급원)
+            this.rawState = { fridgeTemp, freezerTemp, rapidCool, steril }
 
             this.publishProperty('fridge_temp', fridgeTemp)
             this.publishProperty('freezer_temp', freezerTemp)
@@ -92,6 +112,8 @@ export default class Device extends HADevice {
             this.publishProperty('lock', locked ? 'OFF' : 'ON')
         })
     }
+
+    rawState = { ...DEFAULT_STATE }
 
     monTimer: ReturnType<typeof setInterval> | undefined
 
@@ -111,7 +133,42 @@ export default class Device extends HADevice {
         this.HA.publishProperty(this.id, prop, value)
     }
 
+    sendControl() {
+        const s = this.rawState
+        const buf = Buffer.from([
+            7 - s.fridgeTemp,
+            -15 - s.freezerTemp,
+            s.rapidCool ? 0x02 : 0x01,
+            s.steril === 'power' ? 0x03 : s.steril === 'on' ? 0x02 : 0x01,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        ])
+        this.thinq.send({
+            Cmd: 'Control',
+            CmdOpt: 'Set',
+            Value: 'ControlData',
+            Format: 'B64',
+            Data: buf.toString('base64'),
+        })
+    }
+
     setProperty(prop: string, mqttValue: string) {
-        // 진단 단계라 제어는 아직 구현하지 않음
+        if (prop === 'fridge_temp') {
+            const v = Number(mqttValue)
+            if (!Number.isFinite(v) || v < 0 || v > 6) return
+            this.rawState.fridgeTemp = v
+        } else if (prop === 'freezer_temp') {
+            const v = Number(mqttValue)
+            if (!Number.isFinite(v) || v < -24 || v > -16) return
+            this.rawState.freezerTemp = v
+        } else if (prop === 'rapid_cool') {
+            this.rawState.rapidCool = mqttValue === 'ON'
+        } else if (prop === 'steril') {
+            if (!STERIL_MODES.includes(mqttValue as SterilMode)) return
+            this.rawState.steril = mqttValue as SterilMode
+        } else {
+            return
+        }
+
+        this.sendControl()
     }
 }
