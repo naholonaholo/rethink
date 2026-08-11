@@ -121,6 +121,8 @@ export default class Device extends HADevice {
 
     monTimer: ReturnType<typeof setInterval> | undefined
 
+    ///세탁기와 다르게 지속적 push 습관이 없어서 폴링 40초 넣음
+    ///냉장고에서 조작시 바로 반영안되므로 폴링이 필요함
     start() {
         this.thinq.send({ Cmd: 'Mon', CmdOpt: 'Start' })
         this.monTimer = setInterval(() => {
