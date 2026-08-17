@@ -34,13 +34,9 @@ export default class Device extends HADevice {
         })
     }
 
-    monTimer: ReturnType<typeof setInterval> | undefined
-
     start() {
+        // 반복 전송(setInterval) 제거 — 세션 리셋으로 인한 방해 가능성 테스트
         this.thinq.send({ Cmd: 'Mon', CmdOpt: 'Start' })
-        this.monTimer = setInterval(() => {
-            this.thinq.send({ Cmd: 'Mon', CmdOpt: 'Start' })
-        }, 40_000)
     }
 
     setProperty(prop: string, mqttValue: string) {
