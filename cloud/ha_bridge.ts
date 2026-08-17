@@ -34,6 +34,7 @@ type T2Factory = new (HA: Connection, thinq: T2Device, metadata: Metadata) => HA
 const t1deviceTypes: Record<string, T1Factory> = {
     WTDN3,
     ['2REF12EBN___2']: Dev_2REF12EBN___2,  // naholo
+    ['F17VDW_KOR']: Dev_F17VDW_KOR,  //naholo
 }
 const t2deviceTypes: Record<string, T2Factory> = {
     POT_056905_WW,
