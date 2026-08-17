@@ -182,4 +182,4 @@ export default class Device extends HADevice {
 
         this.sendControl()
     }
-}
+} 
