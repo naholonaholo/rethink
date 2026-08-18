@@ -205,17 +205,12 @@ export default class Device extends TLVDevice {
         this.tlvBlacklistDisableTimer = setTimeout(() => {
             this.tlvBlacklistDisableTimer = undefined
 
-            if (!(this.raw_clip_state[0x2f1] & 1 || this.raw_clip_state[0x2f1] & 0x200)) {
-                // no mFilter, check basic filter management support
-                this.initProbeForFilter()
-            } else {
-                // unsupported mFilter management support
-                this.initMakeSetConfig()
-            }
+            // 필터 관리 기능 미사용 - 필터 프로브를 건너뛰고 바로 설정 생성
+            this.initMakeSetConfig()
         }, 500)
     }
 
-    initProbeForFilter() {
+     initProbeForFilter() {
         log('status', this.id, 'sending initial filter data query')
         this.sendFilterQuery()
 
