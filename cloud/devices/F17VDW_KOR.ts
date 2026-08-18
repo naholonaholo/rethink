@@ -1,6 +1,7 @@
 import HADevice from './base'
 import { Device as Thinq1Device } from '../thinq1/device'
 import { type Connection } from '../homeassistant'
+import { allowExtendedType } from '@/util/casting'
 import { Metadata } from '../thinq'
 
 // status(byte0) 코드 — 실측 패킷 캡처로 확인 (2026-08-17)
@@ -58,64 +59,66 @@ export default class Device extends HADevice {
         meta: Metadata,
     ) {
         super(HA, thinq.id)
-        this.setConfig({
-            ...HADevice.config(meta, { name: 'LG Washer' }),
-            components: {
-                status: {
-                    platform: 'sensor',
-                    unique_id: '$deviceid-status',
-                    state_topic: '$this/status',
-                    name: 'Status',
-                    icon: 'mdi:state-machine',
-                    device_class: 'enum',
-                    options: Object.values(STATES),
+        this.setConfig(
+            allowExtendedType({
+                ...HADevice.config(meta, { name: 'LG Washer' }),
+                components: {
+                    status: {
+                        platform: 'sensor',
+                        unique_id: '$deviceid-status',
+                        state_topic: '$this/status',
+                        name: 'Status',
+                        icon: 'mdi:state-machine',
+                        device_class: 'enum',
+                        options: Object.values(STATES),
+                    },
+                    course: {
+                        platform: 'sensor',
+                        unique_id: '$deviceid-course',
+                        state_topic: '$this/course',
+                        name: 'Course',
+                        icon: 'mdi:pin-outline',
+                    },
+                    spin: {
+                        platform: 'sensor',
+                        unique_id: '$deviceid-spin',
+                        state_topic: '$this/spin',
+                        name: 'Spin',
+                        icon: 'mdi:autorenew',
+                    },
+                    temp: {
+                        platform: 'sensor',
+                        unique_id: '$deviceid-temp',
+                        state_topic: '$this/temp',
+                        name: 'Water temperature',
+                        icon: 'mdi:thermometer',
+                    },
+                    rinse_count: {
+                        platform: 'sensor',
+                        unique_id: '$deviceid-rinse_count',
+                        state_topic: '$this/rinse_count',
+                        name: 'Rinse count',
+                        icon: 'mdi:water-sync',
+                    },
+                    initial_time: {
+                        platform: 'sensor',
+                        unique_id: '$deviceid-initial_time',
+                        state_topic: '$this/initial_time',
+                        device_class: 'duration',
+                        unit_of_measurement: 'min',
+                        name: 'Initial time',
+                    },
+                    remaining_time: {
+                        platform: 'sensor',
+                        unique_id: '$deviceid-remaining_time',
+                        state_topic: '$this/remaining_time',
+                        device_class: 'duration',
+                        unit_of_measurement: 'min',
+                        name: 'Remaining time',
+                    },
                 },
-                course: {
-                    platform: 'sensor',
-                    unique_id: '$deviceid-course',
-                    state_topic: '$this/course',
-                    name: 'Course',
-                    icon: 'mdi:pin-outline',
-                },
-                spin: {
-                    platform: 'sensor',
-                    unique_id: '$deviceid-spin',
-                    state_topic: '$this/spin',
-                    name: 'Spin',
-                    icon: 'mdi:autorenew',
-                },
-                temp: {
-                    platform: 'sensor',
-                    unique_id: '$deviceid-temp',
-                    state_topic: '$this/temp',
-                    name: 'Water temperature',
-                    icon: 'mdi:thermometer',
-                },
-                rinse_count: {
-                    platform: 'sensor',
-                    unique_id: '$deviceid-rinse_count',
-                    state_topic: '$this/rinse_count',
-                    name: 'Rinse count',
-                    icon: 'mdi:water-sync',
-                },
-                initial_time: {
-                    platform: 'sensor',
-                    unique_id: '$deviceid-initial_time',
-                    state_topic: '$this/initial_time',
-                    device_class: 'duration',
-                    unit_of_measurement: 'min',
-                    name: 'Initial time',
-                },
-                remaining_time: {
-                    platform: 'sensor',
-                    unique_id: '$deviceid-remaining_time',
-                    state_topic: '$this/remaining_time',
-                    device_class: 'duration',
-                    unit_of_measurement: 'min',
-                    name: 'Remaining time',
-                },
-            },
-        })
+            }),
+        )
 
         thinq.on('data', (buf) => {
             if (buf.length !== 25) return
