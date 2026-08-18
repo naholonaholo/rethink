@@ -90,10 +90,7 @@ export default class Device extends TLVDevice {
         super(HA, thinq)
         this.meta = meta
         this.energyStats = this.loadEnergyStats()
-        if (meta.modelId === 'PAC_910604_WW') {
-            this.energyResetTimer = setInterval(() => this.rollEnergyPeriods(), 60_000)
-            this.energyResetTimer.unref()
-        }
+
     }
 
     drop() {
@@ -376,15 +373,15 @@ export default class Device extends TLVDevice {
                     action_topic: '$this/climate-action',
                     temperature_unit: 'C',
                     /* TODO: detect 0.5 C vs 1 C step */
-                    temp_step: 0.5,
-                    precision: 0.5,
+                    temp_step: 1,
+                    precision: 1,
                     /* TODO: some devices report these temp ranges via tags 0x2e1 - 0x2ec */
                     min_temp: 18,
                     max_temp: 30,
-                    ...(isPac910604 ? { modes: ['off', 'cool', 'dry', 'fan_only'] } : {}),
+                    ...(isPac910604 ? { modes: ['off', 'cool', 'dry', 'fan_only', 'cool_power'] } : {}),
                     /* TODO: get from 0x2c2 */
                     fan_modes: isPac910604
-                        ? ['약풍', '중풍', '강풍', '롱파워', '쿨파워']
+                        ? ['약풍', '중풍', '강풍']
                         : ['auto', 'very low', 'low', 'medium', 'high', 'very high'],
                     /* TODO: get allowed op modes from 0x2c1 */
                 } satisfies ClimateComponent,
@@ -480,6 +477,13 @@ export default class Device extends TLVDevice {
                     this.setProperty('climate-power', 'OFF')
                     return null
                 }
+                if (val === 'cool_power') {
+                    // 실제 쿨파워는 IR 전용 기능(TLV로 제어 불가)이라,
+                    // 리모컨 쿨파워와 동일한 결과(18도 + 강풍)를 흉내내는 매크로
+                    this.setProperty('climate-temperature', '18')
+                    this.setProperty('climate-fan_mode', '강풍')
+                    return 0 // cool 모드로 진입
+                }
                 return modes2clip[val]
             },
             write_callback: (raw) => {
@@ -501,7 +505,6 @@ export default class Device extends TLVDevice {
                         0x0202: '약풍',
                         0x0404: '중풍',
                         0x0606: '강풍',
-                        0x0909: '롱파워',
                     }
                     return pacModes[raw]
                 }
@@ -521,32 +524,10 @@ export default class Device extends TLVDevice {
             },
             write_xform: (val) => {
                 if (isPac910604) {
-                    if (val === '쿨파워') {
-                        if (this.getModeTLV() === 5) this.schedulePacFanOnlyStop()
-                        if (!this.jetMode) {
-                            this.setProperty('coolpower-', 'ON')
-                            this.jetMode = true
-                        }
-                        return null
-                    }
-                    if (this.jetMode) {
-                        this.setProperty('coolpower-', 'OFF')
-                        this.jetMode = false
-                    }
-                    if (val === '롱파워' && this.getModeTLV() === 5) {
-                        this.setProperty('climate-mode', 'cool')
-                        if (this.pacLongPowerTimeout != undefined) clearTimeout(this.pacLongPowerTimeout)
-                        this.pacLongPowerTimeout = setTimeout(() => {
-                            this.pacLongPowerTimeout = undefined
-                            this.setProperty('climate-fan_mode', '롱파워')
-                        }, 1700)
-                        return null
-                    }
                     const pacModes: Record<string, number> = {
                         약풍: 0x0202,
                         중풍: 0x0404,
                         강풍: 0x0606,
-                        롱파워: 0x0909,
                     }
                     return pacModes[val]
                 }
@@ -574,22 +555,7 @@ export default class Device extends TLVDevice {
         })
 
         if (isPac910604) {
-            config['components']['climate']['swing_modes'] = ['정지', '회전']
-            config['components']['climate']['swing_horizontal_modes'] = ['정지', '우측', '좌측', '좌우']
-            this.addField(config, {
-                id: 0x205,
-                name: 'swing_mode',
-                comp: 'climate',
-                read_xform: (raw) => (raw ? '회전' : '정지'),
-                write_xform: (val) => (val === '회전' ? 1 : 0),
-            })
-            this.addField(config, {
-                id: 0x206,
-                name: 'swing_horizontal_mode',
-                comp: 'climate',
-                read_xform: (raw) => ({ 0x0000: '정지', 0x0001: '우측', 0x0100: '좌측', 0x0101: '좌우' })[raw],
-                write_xform: (val) => ({ 정지: 0x0000, 우측: 0x0001, 좌측: 0x0100, 좌우: 0x0101 })[val],
-            })
+            // 회전모드 없는 모델이라 swing 관련 필드 미사용
         } else if (this.raw_clip_state[0x2cd] & 4) {
             config['components']['climate']['swing_modes'] = ['1', '2', '3', '4', '5', '6', 'on', 'off']
             this.addField(config, {
@@ -657,7 +623,6 @@ export default class Device extends TLVDevice {
             })
         }
 
-        this.addOptionalSensorField(config, 0x221, 'error', 'Error code', 'mdi:alert')
         this.addOptionalSensorField(
             config,
             0x32e,
@@ -769,22 +734,8 @@ export default class Device extends TLVDevice {
         const jetCool: boolean = !!(this.raw_clip_state[0x2cd] & 1)
         const jetHeat: boolean = !!(this.raw_clip_state[0x2cd] & 2)
         if (isPac910604) {
-            this.addField(
-                config,
-                {
-                    id: 0x236,
-                    name: '',
-                    comp: 'coolpower',
-                    read_xform: (raw) => (raw ? 'ON' : 'OFF'),
-                    write_xform: (val) => (val === 'ON' ? 1 : 0),
-                    read_callback: (val) => {
-                        this.jetMode = val === 'ON'
-                        if (this.jetMode) this.HA.publishProperty(this.id, 'climate-fan_mode', '쿨파워')
-                        return false
-                    },
-                },
-                false,
-            )
+            // 이 모델은 쿨파워가 IR 전용 기능이라 TLV로는 제어 불가.
+            // 대신 'cool_power' 가상 모드(18도+강풍 매크로)로 대체함 — 위 mode 필드 참고
         } else if (jetCool || jetHeat) {
             this.addJetField(
                 config,
@@ -898,150 +849,10 @@ export default class Device extends TLVDevice {
         // 0x21f - "display light" value is inverted in some devices,
         // but in some devices it is not - not shown in ThinQ app either
 
-        if (this.filterLifeTime) {
-            const filterUsed = {
-                platform: 'sensor',
-                unique_id: '$deviceid-filterused',
-                state_topic: '$this/filterused',
-                name: 'Filter used time',
-                icon: 'mdi:air-filter',
-                device_class: 'duration',
-                unit_of_measurement: 'h',
-                state_class: 'total_increasing',
-                entity_category: 'diagnostic',
-            }
-            config['components']['filterused'] = filterUsed
-            const filterLife = {
-                platform: 'sensor',
-                unique_id: '$deviceid-filterlife',
-                state_topic: '$this/filterlife',
-                name: 'Filter life time',
-                icon: 'mdi:air-filter',
-                device_class: 'duration',
-                unit_of_measurement: 'h',
-                entity_category: 'diagnostic',
-            }
-            config['components']['filterlife'] = filterLife
-            const filterChanged = {
-                platform: 'sensor',
-                unique_id: '$deviceid-filterchangeddate',
-                state_topic: '$this/filterchangeddate',
-                name: 'Filter usage last reset',
-                icon: 'mdi:calendar-refresh-outline',
-                device_class: 'date',
-                entity_category: 'diagnostic',
-            }
-            config['components']['changeddate'] = filterChanged
-
-            const filterReset = {
-                platform: 'button',
-                unique_id: '$deviceid-filterreset',
-                command_topic: '$this/filterreset/set',
-                name: 'Reset filter usage',
-                icon: 'mdi:calendar-refresh-outline',
-                entity_category: 'diagnostic',
-            }
-            config['components']['filterreset'] = filterReset
-            this.fields_by_ha['filterreset'] = {
-                name: '',
-                comp: '',
-                write_xform: (val) => (val === 'PRESS' ? 1 : 0),
-                write_callback: (val) => {
-                    if (val === 1) this.sendFilterReset()
-                    return false
-                },
-            }
-        }
 
         // this value is reported as zero by multi-split units
-        if (this.raw_clip_state[0x2b3]) {
-            const energyCurrent = {
-                platform: 'sensor',
-                unique_id: '$deviceid-energy_current',
-                state_topic: '$this/energy_current',
-                name: 'Power',
-                device_class: 'power',
-                unit_of_measurement: 'W',
-                state_class: 'measurement',
-                suggested_display_precision: 0,
-            }
-
-            config['components']['energy_current'] = energyCurrent
-
-            // The measurements reported by RAC_056905_WW appear to be Watts, but they are not accurate in several aspects:
-            // - the value is biased by +50
-            // - idle consumption (around 4W) and the 4-way valve is not included
-            // - fan modes' consumption appears to be approximated
-            //
-            // The formula below is expected to be within +/-10% of the actual power consumption. The discrepancy may
-            // be highest in fan-only modes.
-            //
-            // PAC_910604_WW live measurements were compared against an external power meter and match the raw value,
-            // so the upstream RAC-specific correction must not be applied to that model.
-            this.addField(config, {
-                id: 0x2b3,
-                name: '',
-                comp: 'energy_current',
-                writable: false,
-                read_xform: (raw) => (isPac910604 ? raw : Math.max(5, raw - 60)),
-            })
-        }
-
-        if (isPac910604) {
-            const energyCurrentHour = {
-                platform: 'sensor',
-                device_class: 'energy',
-                unique_id: '$deviceid-energy_current_hour',
-                state_topic: '$this/energy_current_hour',
-                name: '현재 시간 누적 사용량',
-                unit_of_measurement: 'Wh',
-                state_class: 'total',
-                icon: 'mdi:lightning-bolt',
-            }
-            const energyToday = {
-                platform: 'sensor',
-                device_class: 'energy',
-                unique_id: '$deviceid-energy_today',
-                state_topic: '$this/energy_today',
-                name: '오늘 누적 사용량',
-                unit_of_measurement: 'Wh',
-                state_class: 'total',
-                icon: 'mdi:calendar-today',
-            }
-            const energyMonth = {
-                platform: 'sensor',
-                device_class: 'energy',
-                unique_id: '$deviceid-energy_month',
-                state_topic: '$this/energy_month',
-                name: '금월 누적 사용량',
-                unit_of_measurement: 'kWh',
-                state_class: 'total',
-                suggested_display_precision: 3,
-                icon: 'mdi:calendar-month',
-            }
-            config['components']['energy_current_hour'] = energyCurrentHour
-            config['components']['energy_today'] = energyToday
-            config['components']['energy_month'] = energyMonth
-        }
 
         this.setConfig(config)
-        if (isPac910604) this.publishEnergyStats()
-
-        if (this.filterLifeTime) {
-            this.publishFilterData()
-
-            /*
-             * Refresh only once a day since a query might do an EEPROM
-             * write.
-             */
-            this.filterQueryTimer = setInterval(
-                () => {
-                    log('status', this.id, 'sending periodic filter data refresh query')
-                    this.sendFilterQuery()
-                },
-                24 * 60 * 60 * 1000,
-            )
-        }
 
         this.query()
     }
