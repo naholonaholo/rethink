@@ -139,26 +139,27 @@ export default class Device extends TLVDevice {
         //   uint32 LE interval energy (Wh), uint32 LE interval duration (seconds).
         // A non-zero report is normally emitted about every 15 minutes, with
         // zero-filled status reports in between.
-        if (
-            this.meta.modelId === 'PAC_910604_WW' &&
-            buf.length >= 20 &&
-            buf[0] === 0x00 &&
-            buf[6] === 0x87 &&
-            buf[7] === 0xfd &&
-            buf[8] === 0x03 &&
-            buf[10] === 0xb1 &&
-            buf[11] === 0x15
-        ) {
-            const intervalWh = buf.readUInt32LE(12)
-            const intervalSeconds = buf.readUInt32LE(16)
-            if (intervalWh > 0 && intervalSeconds >= 600 && intervalSeconds <= 1200) {
-                this.processEnergyInterval(intervalWh, intervalSeconds)
-            }
-        }
+        // if (
+        //     this.meta.modelId === 'PAC_910604_WW' &&
+        //     buf.length >= 20 &&
+        //     buf[0] === 0x00 &&
+        //     buf[6] === 0x87 &&
+        //     buf[7] === 0xfd &&
+        //     buf[8] === 0x03 &&
+        //     buf[10] === 0xb1 &&
+        //     buf[11] === 0x15
+        // ) {
+        //     const intervalWh = buf.readUInt32LE(12)
+        //     const intervalSeconds = buf.readUInt32LE(16)
+        //     if (intervalWh > 0 && intervalSeconds >= 600 && intervalSeconds <= 1200) {
+        //         this.processEnergyInterval(intervalWh, intervalSeconds)
+        //     }
+        // }
     }
 
     processPrivData(cmd: number, buf9: number, data: Buffer) {
-        if (cmd == 0x02) this.processFilterData(buf9, data)
+        // 필터 관리 기능 미사용 - 기기가 자체적으로 보내는 필터 리포트도 무시
+        // if (cmd == 0x02) this.processFilterData(buf9, data)
     }
 
     processPrivDataCmdResp(success: boolean, buf1: number, cmd: number, data: Buffer) {
