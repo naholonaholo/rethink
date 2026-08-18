@@ -7,8 +7,6 @@ import * as TLV from '@/util/tlv'
 import { racAirTemp, racPipeTemp } from '@/util/ac_tables'
 import log from '@/util/logging'
 import HADevice from './base'
-import { dirname, join, resolve } from 'node:path'
-import { readFileSync, renameSync, writeFileSync } from 'node:fs'
 
 type PowerModeChangeHook = () => void
 type CheckMode = (arg: number) => boolean
@@ -19,50 +17,6 @@ const HUMIDITY_SENSOR_MODE_COMMANDS = {
     0: Buffer.from('01020400000065fd0100050c00000000b161', 'hex'),
     1: Buffer.from('01020400000065fd0100050c00000001a140', 'hex'),
 } as const
-
-type EnergyStats = {
-    hour: string
-    date: string
-    month: string
-    hourWh: number
-    dayWh: number
-    monthWh: number
-    lastReportSignature?: string
-    lastReportAt?: number
-}
-
-function localDate(timestamp = Date.now()) {
-    const parts = new Intl.DateTimeFormat('en', {
-        timeZone: 'Asia/Seoul',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-    }).formatToParts(timestamp)
-    const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value
-    return `${part('year')}-${part('month')}-${part('day')}`
-}
-
-function localHour(timestamp = Date.now()) {
-    const parts = new Intl.DateTimeFormat('en-CA', {
-        timeZone: 'Asia/Seoul',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        hourCycle: 'h23',
-    }).formatToParts(timestamp)
-    const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value
-    return `${part('year')}-${part('month')}-${part('day')}T${part('hour')}`
-}
-
-function localMonth(timestamp = Date.now()) {
-    return localDate(timestamp).slice(0, 7)
-}
-
-function dataDirectory() {
-    if (!process.argv[1]?.includes('rethink-cloud')) return
-    return dirname(resolve(process.argv[2] ?? './config.json'))
-}
 
 export default class Device extends TLVDevice {
     meta: Metadata
@@ -76,21 +30,12 @@ export default class Device extends TLVDevice {
     energySave: boolean = false
     tlvBlacklistDisableTimer: ReturnType<typeof setTimeout> | undefined
     increasedQueryIntervalTimeout: ReturnType<typeof setTimeout> | undefined
-    filterUsedTime: number = 0
-    filterLifeTime: number = 0
-    filterChangedDate: number = 0
-    filterInitialQueryTimeout: ReturnType<typeof setTimeout> | undefined
-    filterQueryTimer: ReturnType<typeof setInterval> | undefined
     pacFanOnlyStopTimeout: ReturnType<typeof setTimeout> | undefined
     pacLongPowerTimeout: ReturnType<typeof setTimeout> | undefined
-    energyResetTimer: ReturnType<typeof setInterval> | undefined
-    energyStats: EnergyStats
 
     constructor(HA: Connection, thinq: Thinq2Device, meta: Metadata) {
         super(HA, thinq)
         this.meta = meta
-        this.energyStats = this.loadEnergyStats()
-
     }
 
     drop() {
@@ -104,16 +49,6 @@ export default class Device extends TLVDevice {
             this.increasedQueryIntervalTimeout = undefined
         }
 
-        if (this.filterInitialQueryTimeout != undefined) {
-            clearTimeout(this.filterInitialQueryTimeout)
-            this.filterInitialQueryTimeout = undefined
-        }
-
-        if (this.filterQueryTimer != undefined) {
-            clearInterval(this.filterQueryTimer)
-            this.filterQueryTimer = undefined
-        }
-
         if (this.pacFanOnlyStopTimeout != undefined) {
             clearTimeout(this.pacFanOnlyStopTimeout)
             this.pacFanOnlyStopTimeout = undefined
@@ -124,65 +59,7 @@ export default class Device extends TLVDevice {
             this.pacLongPowerTimeout = undefined
         }
 
-        if (this.energyResetTimer != undefined) {
-            clearInterval(this.energyResetTimer)
-            this.energyResetTimer = undefined
-        }
-
         super.drop()
-    }
-
-    processData(buf: Buffer) {
-        super.processData(buf)
-
-        // PAC_910604_WW private B115 statistics report:
-        //   uint32 LE interval energy (Wh), uint32 LE interval duration (seconds).
-        // A non-zero report is normally emitted about every 15 minutes, with
-        // zero-filled status reports in between.
-        // if (
-        //     this.meta.modelId === 'PAC_910604_WW' &&
-        //     buf.length >= 20 &&
-        //     buf[0] === 0x00 &&
-        //     buf[6] === 0x87 &&
-        //     buf[7] === 0xfd &&
-        //     buf[8] === 0x03 &&
-        //     buf[10] === 0xb1 &&
-        //     buf[11] === 0x15
-        // ) {
-        //     const intervalWh = buf.readUInt32LE(12)
-        //     const intervalSeconds = buf.readUInt32LE(16)
-        //     if (intervalWh > 0 && intervalSeconds >= 600 && intervalSeconds <= 1200) {
-        //         this.processEnergyInterval(intervalWh, intervalSeconds)
-        //     }
-        // }
-    }
-
-    processPrivData(cmd: number, buf9: number, data: Buffer) {
-        // 필터 관리 기능 미사용 - 기기가 자체적으로 보내는 필터 리포트도 무시
-        // if (cmd == 0x02) this.processFilterData(buf9, data)
-    }
-
-    processPrivDataCmdResp(success: boolean, buf1: number, cmd: number, data: Buffer) {
-        if (cmd == 0x2) this.processFilterCmdResp(success, data)
-    }
-
-    sendFilterQuery() {
-        this.sendPrivCommand(0x02, 0x02)
-    }
-
-    sendFilterReset() {
-        if (!this.filterLifeTime) throw new Error('Filter lifetime not known')
-
-        const now = new Date()
-        const date = now.getUTCFullYear() * 10000 + (now.getUTCMonth() + 1) * 100 + now.getUTCDate()
-
-        const buf = Buffer.alloc(4 * 3)
-        // yes, it's opposite endianness vs read cmd
-        buf.writeUInt32BE(this.filterLifeTime, 1 * 4)
-        buf.writeUInt32BE(date, 2 * 4)
-
-        log('status', this.id, 'sending filter reset')
-        this.sendPrivCommand(0x02, 0x01, buf)
     }
 
     isCapsResponse(tlvArray: TLV.TLV[]) {
@@ -209,67 +86,6 @@ export default class Device extends TLVDevice {
             // 필터 관리 기능 미사용 - 필터 프로브를 건너뛰고 바로 설정 생성
             this.initMakeSetConfig()
         }, 500)
-    }
-
-     initProbeForFilter() {
-        log('status', this.id, 'sending initial filter data query')
-        this.sendFilterQuery()
-
-        this.filterInitialQueryTimeout = setTimeout(() => {
-            this.filterInitialQueryTimeout = undefined
-
-            log('status', this.id, 'filter data query timeout, assuming no filter')
-            this.initMakeSetConfig()
-        }, 5 * 1000)
-    }
-
-    processFilterData(buf9: number, data: Buffer) {
-        if (data.length < 1 + 3 * 4) {
-            log('status', this.id, 'filter data too short:', data.length)
-            return
-        }
-
-        this.filterUsedTime = data.readUInt32LE(1 + 0 * 4)
-        this.filterLifeTime = data.readUInt32LE(1 + 1 * 4)
-        this.filterChangedDate = data.readUInt32LE(1 + 2 * 4)
-
-        // if this was the initial filter query the device config is ready now
-        if (this.filterInitialQueryTimeout != undefined) {
-            log('status', this.id, 'received initial filter data')
-
-            clearTimeout(this.filterInitialQueryTimeout)
-            this.filterInitialQueryTimeout = undefined
-
-            this.initMakeSetConfig()
-        } else {
-            // if this was not the initial query just update the HA values
-            this.publishFilterData()
-        }
-    }
-
-    publishFilterData() {
-        const changedDate =
-            Math.floor(this.filterChangedDate / 10000)
-                .toString()
-                .padStart(4, '0') +
-            '-' +
-            (Math.floor(this.filterChangedDate / 100) % 100).toString().padStart(2, '0') +
-            '-' +
-            (this.filterChangedDate % 100).toString().padStart(2, '0')
-
-        this.HA.publishProperty(this.id, 'filterused', this.filterUsedTime)
-        this.HA.publishProperty(this.id, 'filterlife', this.filterLifeTime)
-        this.HA.publishProperty(this.id, 'filterchangeddate', changedDate)
-    }
-
-    processFilterCmdResp(success: boolean, data: Buffer) {
-        if (!success) {
-            log('status', this.id, 'filter reset failed')
-            return
-        }
-
-        log('status', this.id, 'filter reset okay, re-querying')
-        this.sendFilterQuery()
     }
 
     updateClimateAction() {
@@ -842,103 +658,9 @@ export default class Device extends TLVDevice {
             this.updateClimateAction()
         })
 
-        // 0x21f - "display light" value is inverted in some devices,
-        // but in some devices it is not - not shown in ThinQ app either
-
-
-        // this value is reported as zero by multi-split units
-
         this.setConfig(config)
 
         this.query()
-    }
-
-    private energyStatsPath() {
-        const dir = dataDirectory()
-        return dir ? join(dir, `air-conditioner-energy-${this.id}.json`) : undefined
-    }
-
-    private loadEnergyStats(now = Date.now()): EnergyStats {
-        const current = { hour: localHour(now), date: localDate(now), month: localMonth(now) }
-        const empty: EnergyStats = { ...current, hourWh: 0, dayWh: 0, monthWh: 0 }
-        const path = this.energyStatsPath()
-        if (!path) return empty
-        try {
-            const saved = JSON.parse(readFileSync(path, 'utf-8')) as EnergyStats
-            return {
-                ...current,
-                hourWh: saved.hour === current.hour ? Number(saved.hourWh) || 0 : 0,
-                dayWh: saved.date === current.date ? Number(saved.dayWh) || 0 : 0,
-                monthWh: saved.month === current.month ? Number(saved.monthWh) || 0 : 0,
-                ...(saved.lastReportSignature ? { lastReportSignature: saved.lastReportSignature } : {}),
-                ...(Number.isFinite(saved.lastReportAt) ? { lastReportAt: Number(saved.lastReportAt) } : {}),
-            }
-        } catch {
-            return empty
-        }
-    }
-
-    private saveEnergyStats() {
-        const path = this.energyStatsPath()
-        if (!path) return
-        const temporary = `${path}.tmp`
-        try {
-            writeFileSync(temporary, JSON.stringify(this.energyStats))
-            renameSync(temporary, path)
-        } catch (err) {
-            console.warn(`Unable to save air conditioner energy statistics: ${err}`)
-        }
-    }
-
-    private publishEnergyStats() {
-        this.HA.publishProperty(this.id, 'energy_current_hour', this.energyStats.hourWh)
-        this.HA.publishProperty(this.id, 'energy_today', this.energyStats.dayWh)
-        this.HA.publishProperty(this.id, 'energy_month', Number((this.energyStats.monthWh / 1000).toFixed(3)))
-    }
-
-    private processEnergyInterval(intervalWh: number, intervalSeconds: number, now = Date.now()) {
-        this.rollEnergyPeriods(now)
-        const signature = `${intervalWh}:${intervalSeconds}`
-        if (
-            this.energyStats.lastReportSignature === signature &&
-            this.energyStats.lastReportAt != null &&
-            now - this.energyStats.lastReportAt < 2 * 60_000
-        )
-            return
-
-        this.energyStats.lastReportSignature = signature
-        this.energyStats.lastReportAt = now
-        this.energyStats.hourWh += intervalWh
-        this.energyStats.dayWh += intervalWh
-        this.energyStats.monthWh += intervalWh
-        this.publishEnergyStats()
-        this.saveEnergyStats()
-    }
-
-    private rollEnergyPeriods(now = Date.now()) {
-        const hour = localHour(now)
-        const date = localDate(now)
-        const month = localMonth(now)
-        let changed = false
-        if (this.energyStats.month !== month) {
-            this.energyStats.month = month
-            this.energyStats.monthWh = 0
-            changed = true
-        }
-        if (this.energyStats.date !== date) {
-            this.energyStats.date = date
-            this.energyStats.dayWh = 0
-            changed = true
-        }
-        if (this.energyStats.hour !== hour) {
-            this.energyStats.hour = hour
-            this.energyStats.hourWh = 0
-            changed = true
-        }
-        if (changed) {
-            this.publishEnergyStats()
-            this.saveEnergyStats()
-        }
     }
 
     addTimerField(config: DeviceDiscovery, id: number, name: string, desc: string, icon: string, max: number) {
