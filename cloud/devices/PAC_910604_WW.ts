@@ -312,12 +312,11 @@ export default class Device extends TLVDevice {
             name: 'fan_mode',
             comp: 'climate',
             read_xform: (raw) => {
-                console.log(`[FAN_MODE_DEBUG] raw=${raw} hex=0x${raw?.toString(16)}`)
                 if (isPac910604) {
                     const pacModes: Record<number, string> = {
-                        0x0202: '약풍',
-                        0x0404: '중풍',
-                        0x0606: '강풍',
+                        0x02: '약풍',
+                        0x04: '중풍',
+                        0x06: '강풍',
                     }
                     return pacModes[raw]
                 }
