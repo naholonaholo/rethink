@@ -190,7 +190,7 @@ export default class Device extends TLVDevice {
                     /* TODO: some devices report these temp ranges via tags 0x2e1 - 0x2ec */
                     min_temp: 18,
                     max_temp: 30,
-                    ...(isPac910604 ? { modes: ['off', 'cool', 'dry', 'fan_only', 'cool_power'] } : {}),
+                    ...(isPac910604 ? { modes: ['off', 'cool', 'dry', 'fan_only'] } : {}),
                     /* TODO: get from 0x2c2 */
                     fan_modes: isPac910604
                         ? ['약풍', '중풍', '강풍']
@@ -288,13 +288,6 @@ export default class Device extends TLVDevice {
                     // Call function power (0x1f7) with value OFF
                     this.setProperty('climate-power', 'OFF')
                     return null
-                }
-                if (val === 'cool_power') {
-                    // 실제 쿨파워는 IR 전용 기능(TLV로 제어 불가)이라,
-                    // 리모컨 쿨파워와 동일한 결과(18도 + 강풍)를 흉내내는 매크로
-                    this.setProperty('climate-temperature', '18')
-                    this.setProperty('climate-fan_mode', '강풍')
-                    return 0 // cool 모드로 진입
                 }
                 return modes2clip[val]
             },
@@ -658,9 +651,32 @@ export default class Device extends TLVDevice {
             this.updateClimateAction()
         })
 
+        if (isPac910604) {
+            const coolPower = {
+                platform: 'button',
+                unique_id: '$deviceid-cool_power',
+                name: 'Cool power',
+                icon: 'mdi:snowflake-alert',
+                command_topic: '$this/cool_power/set',
+                payload_press: 'PRESS',
+            }
+            config['components']['cool_power'] = coolPower
+        }
+
         this.setConfig(config)
 
         this.query()
+    }
+
+    setProperty(prop: string, mqttValue: string) {
+        if (prop === 'cool_power') {
+            // 리모컨 쿨파워와 동일: 냉방 모드 진입 + 18도 + 강풍
+            this.setProperty('climate-mode', 'cool')
+            this.setProperty('climate-temperature', '18')
+            this.setProperty('climate-fan_mode', '강풍')
+            return
+        }
+        super.setProperty(prop, mqttValue)
     }
 
     addTimerField(config: DeviceDiscovery, id: number, name: string, desc: string, icon: string, max: number) {
