@@ -249,6 +249,7 @@ export default class Device extends TLVDevice {
             write_attach: (raw) => (raw ? [0x1f9, 0x1fa, 0x1fe] : []),
             read_xform: (raw) => (raw ? 'ON' : 'OFF'),
             read_callback: (val) => {
+                console.log(`[AC DEBUG] power read val=${val} at ${new Date().toISOString()}`)
                 // update 'mode' instead
                 this.processKeyValue(0x1f9, this.raw_clip_state[0x1f9])
 
@@ -292,12 +293,13 @@ export default class Device extends TLVDevice {
                 return modes2clip[val]
             },
             write_callback: (raw) => {
+                console.log(`[AC DEBUG] mode write raw=${raw} at ${new Date().toISOString()}`)
                 if (isPac910604 && this.getModeTLV() === 5 && (raw === 0 || raw === 1)) {
                     this.schedulePacFanOnlyStop()
                 }
                 return true
             },
-            write_attach: [0x1fa, 0x1fe],
+            write_attach: (raw) => (raw === 5 ? [] : [0x1fa, 0x1fe]),
         })
 
         this.addField(config, {
