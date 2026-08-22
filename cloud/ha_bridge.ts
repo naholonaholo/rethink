@@ -9,8 +9,9 @@ import Dev_2RES1VE61NFA2 from './devices/2RES1VE61NFA2'
 import Dev_2REB1GLVB1__2 from './devices/2REB1GLVB1__2'
 import Dev_2RES1VE600FWC from './devices/2RES1VE600FWC'
 import Dev_2RES2VE300UA2 from './devices/2RES2VE300UA2'
-import Dev_2REF12EBN___2 from './devices/2REF12EBN___2'
-import Dev_F17VDW_KOR from './devices/F17VDW_KOR'
+import Dev_2REF12EBN___2 from './devices/2REF12EBN___2'  //naholo
+import Dev_F17VDW_KOR from './devices/F17VDW_KOR'  //naholo
+import Dev_S5MPC from './devices/S5MPC'  //naholo
 import Y_V8_Y___W_B32QEUK from './devices/Y_V8_Y___W.B32QEUK'
 import F_V8_Y___W_B_2QEUK from './devices/F_V8_Y___W.B_2QEUK'
 import Y_V8_F___W_B_2QEUK from './devices/Y_V8_F___W.B_2QEUK'
@@ -49,6 +50,7 @@ const t2deviceTypes: Record<string, T2Factory> = {
     ['2REB1GLVB1__2']: Dev_2REB1GLVB1__2,
     ['2RES1VE600FWC']: Dev_2RES1VE600FWC,
     ['2RES2VE300UA2']: Dev_2RES2VE300UA2, // Korean refrigerator
+    ['S5MPC']: Dev_S5MPC,  //naholo
     ['Y_V8_Y___W.B32QEUK']: Y_V8_Y___W_B32QEUK,
     ['F_V7_Y___W.B_2QEUK']: F_V8_Y___W_B_2QEUK, // NOTE: we reuse F_V8_Y___W_B_2QEUK as the models appear to be compatible
     ['F_V8_Y___W.B_2QEUK']: F_V8_Y___W_B_2QEUK,
