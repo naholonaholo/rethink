@@ -290,6 +290,11 @@ export default class Device extends TLVDevice {
                     this.setProperty('climate-power', 'OFF')
                     return null
                 }
+                if (val === 'fan_only') {
+                    // 전원이 꺼진 상태에서도 송풍 선택 시 자동으로 전원부터 켜기
+                    this.setProperty('climate-power', 'ON')
+                    return 5
+                }
                 return modes2clip[val]
             },
             write_callback: (raw) => {
