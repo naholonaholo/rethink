@@ -1,6 +1,6 @@
 // cloud/devices/S5MPC.ts
 // LG 스타일러 (S5MPC) - 상태조회 전용 핸들러
-// thinq2 프로토콜: 기기가 상태 변화마다 스스로 60바이트 aabb 프레임을 push하므로
+// thinq2 프로토콜: 기기가 상태 변화마다 스스로 aabb 프레임을 push하므로
 // 별도 폴링(Mon Start 등) 없이 thinq.on('data', ...)만으로 충분함.
 // 원격제어(Control)는 구현하지 않음 - 상태조회(코스/남은시간/상태/에러)만 목적.
 
@@ -82,13 +82,20 @@ export default class Device extends HADevice {
         )
 
         thinq.on('data', (buf) => {
-            // 60바이트 프레임: 헤더(3) + 이전상태블록(29, 마지막 1바이트 패딩) + 이후상태블록(28: 0x1b + 27바이트 payload)
-            if (buf.length !== 60) {
-                console.log(`[STYLER ${thinq.id}] undecoded len=${buf.length} hex=${buf.toString('hex')}`)
+            // 원본은 aa + len(1) + body + checksum(1) + bb 로 감싸져 있음 (aabb 프로토콜 프레이밍)
+            // 우리가 필요한 건 그 안의 body이므로 앞뒤 2바이트씩 벗겨냄
+            if (buf.length < 4 || buf[0] !== 0xaa || buf[buf.length - 1] !== 0xbb) {
+                console.log(`[STYLER ${thinq.id}] not aabb-framed len=${buf.length} hex=${buf.toString('hex')}`)
+                return
+            }
+            const body = buf.subarray(2, buf.length - 2)
+
+            if (body.length !== 60) {
+                console.log(`[STYLER ${thinq.id}] undecoded body len=${body.length} hex=${body.toString('hex')}`)
                 return
             }
 
-            const rest = buf.subarray(3) // 57바이트
+            const rest = body.subarray(3) // 57바이트
             const afterBlock = rest.subarray(29) // 28바이트 (0x1b + 27바이트 payload)
             const payload = afterBlock.subarray(1) // 27바이트 실 데이터
 
