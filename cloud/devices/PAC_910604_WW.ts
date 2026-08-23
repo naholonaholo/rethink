@@ -264,6 +264,7 @@ export default class Device extends TLVDevice {
                 if (val === 'fan_only') {
                     // 전원이 꺼진 상태에서도 송풍 선택 시 자동으로 전원부터 켜기
                     this.setProperty('climate-power', 'ON')
+                    this.setProperty('climate-fan_mode', '강풍')
                     return 5
                 }
                 return modes2clip[val]
@@ -283,9 +284,9 @@ export default class Device extends TLVDevice {
             comp: 'climate',
             read_xform: (raw) => {
                 const pacModes: Record<number, string> = {
-                    0x0202: '약풍',
-                    0x0404: '중풍',
-                    0x0606: '강풍',
+                    0x02: '약풍',
+                    0x04: '중풍',
+                    0x06: '강풍',
                 }
                 return pacModes[raw]
             },
