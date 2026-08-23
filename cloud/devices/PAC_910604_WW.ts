@@ -173,7 +173,7 @@ export default class Device extends TLVDevice {
                     precision: 1,
                     min_temp: 18,
                     max_temp: 30,
-                    modes: ['off', 'cool', 'dry', 'fan_only'],
+                    ...{ modes: ['off', 'cool', 'dry', 'fan_only'] },
                     fan_modes: ['약풍', '중풍', '강풍'],
                 } satisfies ClimateComponent,
             },
