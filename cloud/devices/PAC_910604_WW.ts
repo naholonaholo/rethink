@@ -4,12 +4,9 @@ import { ClimateComponent, DeviceDiscovery, type Connection } from '../homeassis
 import { type Metadata } from '../thinq'
 import { allowExtendedType } from '@/util/casting'
 import * as TLV from '@/util/tlv'
-import { racAirTemp, racPipeTemp } from '@/util/ac_tables'
-import log from '@/util/logging'
 import HADevice from './base'
 
 type PowerModeChangeHook = () => void
-type CheckMode = (arg: number) => boolean
 
 // Live-captured private commands for PAC_910604_WW's humidity-sensor mode.
 // 0 = measure only while the appliance is running, 1 = measure continuously.
@@ -25,13 +22,10 @@ export default class Device extends TLVDevice {
     powerStatePrev?: boolean
     modeChangeHooks: PowerModeChangeHook[] = []
     modePrev?: string
-    airClean: boolean = false
     jetMode: boolean = false
-    energySave: boolean = false
     tlvBlacklistDisableTimer: ReturnType<typeof setTimeout> | undefined
     increasedQueryIntervalTimeout: ReturnType<typeof setTimeout> | undefined
     pacFanOnlyStopTimeout: ReturnType<typeof setTimeout> | undefined
-    pacLongPowerTimeout: ReturnType<typeof setTimeout> | undefined
 
     constructor(HA: Connection, thinq: Thinq2Device, meta: Metadata) {
         super(HA, thinq)
@@ -52,11 +46,6 @@ export default class Device extends TLVDevice {
         if (this.pacFanOnlyStopTimeout != undefined) {
             clearTimeout(this.pacFanOnlyStopTimeout)
             this.pacFanOnlyStopTimeout = undefined
-        }
-
-        if (this.pacLongPowerTimeout != undefined) {
-            clearTimeout(this.pacLongPowerTimeout)
-            this.pacLongPowerTimeout = undefined
         }
 
         super.drop()
@@ -98,10 +87,7 @@ export default class Device extends TLVDevice {
             iduRunning = this.raw_clip_state[iduRunningTLVNum] !== 0
         }
 
-        const modes2ha =
-            this.meta.modelId === 'PAC_910604_WW'
-                ? ['cooling', 'drying', undefined, undefined, undefined, 'fan']
-                : ['cooling', 'drying', 'fan', undefined, 'heating']
+        const modes2ha = ['cooling', 'drying', undefined, undefined, undefined, 'fan']
         let action: string | undefined = undefined
         let increaseQueryInterval = false
         if (this.getPowerTLV() === 0) {
@@ -174,7 +160,6 @@ export default class Device extends TLVDevice {
     }
 
     initMakeSetConfig() {
-        const isPac910604 = this.meta.modelId === 'PAC_910604_WW'
         const config: DeviceDiscovery & { components: { climate: ClimateComponent } } = allowExtendedType({
             ...HADevice.config(this.meta, { name: 'LG Air Conditioner' }),
             components: {
@@ -184,18 +169,12 @@ export default class Device extends TLVDevice {
                     name: null,
                     action_topic: '$this/climate-action',
                     temperature_unit: 'C',
-                    /* TODO: detect 0.5 C vs 1 C step */
                     temp_step: 1,
                     precision: 1,
-                    /* TODO: some devices report these temp ranges via tags 0x2e1 - 0x2ec */
                     min_temp: 18,
                     max_temp: 30,
-                    ...(isPac910604 ? { modes: ['off', 'cool', 'dry', 'fan_only'] } : {}),
-                    /* TODO: get from 0x2c2 */
-                    fan_modes: isPac910604
-                        ? ['약풍', '중풍', '강풍']
-                        : ['auto', 'very low', 'low', 'medium', 'high', 'very high'],
-                    /* TODO: get allowed op modes from 0x2c1 */
+                    modes: ['off', 'cool', 'dry', 'fan_only'],
+                    fan_modes: ['약풍', '중풍', '강풍'],
                 } satisfies ClimateComponent,
             },
         })
@@ -208,37 +187,37 @@ export default class Device extends TLVDevice {
             writable: false,
             read_xform: (raw) => raw / 2,
         })
-        if (isPac910604) {
-            this.addField(config, {
-                id: 0x336,
-                name: 'current_humidity',
-                comp: 'climate',
-                state_topic: 'topic',
-                writable: false,
-            })
 
-            const humiditySensorMode = {
-                platform: 'select',
-                unique_id: '$deviceid-humidity_sensor_mode',
-                name: 'Humidity sensor mode',
-                icon: 'mdi:water-percent',
-                entity_category: 'config',
-                options: ['운전 중에만', '항상'],
-            }
-            config['components']['humidity_sensor_mode'] = humiditySensorMode
-            this.addField(config, {
-                id: 0x337,
-                name: '',
-                comp: 'humidity_sensor_mode',
-                read_xform: (raw) => ({ 0: '운전 중에만', 1: '항상' })[raw],
-                write_xform: (value) => ({ '운전 중에만': 0, 항상: 1 })[value],
-                write_callback: (value) => {
-                    if (value !== 0 && value !== 1) return false
-                    this.thinq.send_packet(HUMIDITY_SENSOR_MODE_COMMANDS[value])
-                    return false
-                },
-            })
+        this.addField(config, {
+            id: 0x336,
+            name: 'current_humidity',
+            comp: 'climate',
+            state_topic: 'topic',
+            writable: false,
+        })
+
+        const humiditySensorMode = {
+            platform: 'select',
+            unique_id: '$deviceid-humidity_sensor_mode',
+            name: 'Humidity sensor mode',
+            icon: 'mdi:water-percent',
+            entity_category: 'config',
+            options: ['운전 중에만', '항상'],
         }
+        config['components']['humidity_sensor_mode'] = humiditySensorMode
+        this.addField(config, {
+            id: 0x337,
+            name: '',
+            comp: 'humidity_sensor_mode',
+            read_xform: (raw) => ({ 0: '운전 중에만', 1: '항상' })[raw],
+            write_xform: (value) => ({ '운전 중에만': 0, 항상: 1 })[value],
+            write_callback: (value) => {
+                if (value !== 0 && value !== 1) return false
+                this.thinq.send_packet(HUMIDITY_SENSOR_MODE_COMMANDS[value])
+                return false
+            },
+        })
+
         this.addField(config, {
             id: 0x1f7,
             name: 'power',
@@ -249,7 +228,6 @@ export default class Device extends TLVDevice {
             write_attach: (raw) => (raw ? [0x1f9, 0x1fa, 0x1fe] : []),
             read_xform: (raw) => (raw ? 'ON' : 'OFF'),
             read_callback: (val) => {
-                console.log(`[AC DEBUG] power read val=${val} at ${new Date().toISOString()}`)
                 // update 'mode' instead
                 this.processKeyValue(0x1f9, this.raw_clip_state[0x1f9])
 
@@ -266,14 +244,9 @@ export default class Device extends TLVDevice {
             name: 'mode',
             comp: 'climate',
             read_xform: (raw) => {
-                if (isPac910604) {
-                    const pacModes: Record<number, string> = { 0: 'cool', 1: 'dry', 5: 'fan_only' }
-                    if (this.getPowerTLV() === 0) return 'off'
-                    return pacModes[raw]
-                }
-                const modes2ha = ['cool', 'dry', 'fan_only', undefined, 'heat', undefined, 'auto']
+                const pacModes: Record<number, string> = { 0: 'cool', 1: 'dry', 5: 'fan_only' }
                 if (this.getPowerTLV() === 0) return 'off'
-                return modes2ha[raw]
+                return pacModes[raw]
             },
             read_callback: (val) => {
                 if (typeof val !== 'string') return true
@@ -282,9 +255,7 @@ export default class Device extends TLVDevice {
                 return true
             },
             write_xform: (val) => {
-                const modes2clip: Record<string, number> = isPac910604
-                    ? { cool: 0, dry: 1, fan_only: 5 }
-                    : { cool: 0, dry: 1, fan_only: 2, heat: 4, auto: 6 }
+                const modes2clip: Record<string, number> = { cool: 0, dry: 1, fan_only: 5 }
                 if (val === 'off') {
                     // Call function power (0x1f7) with value OFF
                     this.setProperty('climate-power', 'OFF')
@@ -298,8 +269,7 @@ export default class Device extends TLVDevice {
                 return modes2clip[val]
             },
             write_callback: (raw) => {
-                console.log(`[AC DEBUG] mode write raw=${raw} at ${new Date().toISOString()}`)
-                if (isPac910604 && this.getModeTLV() === 5 && (raw === 0 || raw === 1)) {
+                if (this.getModeTLV() === 5 && (raw === 0 || raw === 1)) {
                     this.schedulePacFanOnlyStop()
                 }
                 return true
@@ -312,47 +282,20 @@ export default class Device extends TLVDevice {
             name: 'fan_mode',
             comp: 'climate',
             read_xform: (raw) => {
-                if (isPac910604) {
-                    const pacModes: Record<number, string> = {
-                        0x02: '약풍',
-                        0x04: '중풍',
-                        0x06: '강풍',
-                    }
-                    return pacModes[raw]
+                const pacModes: Record<number, string> = {
+                    0x0202: '약풍',
+                    0x0404: '중풍',
+                    0x0606: '강풍',
                 }
-                const modes2ha = [
-                    undefined,
-                    undefined,
-                    'very low',
-                    'low',
-                    'medium',
-                    'high',
-                    'very high',
-                    undefined,
-                    'auto',
-                    'long power',
-                ]
-                return modes2ha[raw]
+                return pacModes[raw]
             },
             write_xform: (val) => {
-                if (isPac910604) {
-                    const pacModes: Record<string, number> = {
-                        약풍: 0x0202,
-                        중풍: 0x0404,
-                        강풍: 0x0606,
-                    }
-                    return pacModes[val]
+                const pacModes: Record<string, number> = {
+                    약풍: 0x0202,
+                    중풍: 0x0404,
+                    강풍: 0x0606,
                 }
-                const modes2clip: Record<string, number> = {
-                    'very low': 2,
-                    low: 3,
-                    medium: 4,
-                    high: 5,
-                    'very high': 6,
-                    auto: 8,
-                    'long power': 9,
-                }
-                return modes2clip[val]
+                return pacModes[val]
             },
             write_attach: [0x1f9, 0x1fe],
         })
@@ -366,274 +309,7 @@ export default class Device extends TLVDevice {
             write_attach: [0x1f9, 0x1fa],
         })
 
-        if (isPac910604) {
-            // 회전모드 없는 모델이라 swing 관련 필드 미사용
-        } else if (this.raw_clip_state[0x2cd] & 4) {
-            config['components']['climate']['swing_modes'] = ['1', '2', '3', '4', '5', '6', 'on', 'off']
-            this.addField(config, {
-                id: 0x321,
-                name: 'swing_mode',
-                comp: 'climate',
-                read_xform: (raw) => {
-                    const modes2ha = ['off', '1', '2', '3', '4', '5', '6']
-                    modes2ha[100] = 'on'
-                    return modes2ha[raw]
-                },
-                write_xform: (val) => {
-                    const modes2clip: Record<string, number> = {
-                        off: 0,
-                        '1': 1,
-                        '2': 2,
-                        '3': 3,
-                        '4': 4,
-                        '5': 5,
-                        '6': 6,
-                        on: 100,
-                    }
-                    return modes2clip[val]
-                },
-            })
-        }
-
-        if (this.raw_clip_state[0x2cd] & 8) {
-            config['components']['climate']['swing_horizontal_modes'] = [
-                '1',
-                '2',
-                '3',
-                '4',
-                '5',
-                '1-3',
-                '3-5',
-                'on',
-                'off',
-            ]
-            this.addField(config, {
-                id: 0x322,
-                name: 'swing_horizontal_mode',
-                comp: 'climate',
-                read_xform: (raw) => {
-                    const modes2ha = ['off', '1', '2', '3', '4', '5']
-                    modes2ha[13] = '1-3'
-                    modes2ha[35] = '3-5'
-                    modes2ha[100] = 'on'
-                    return modes2ha[raw]
-                },
-                write_xform: (val) => {
-                    const modes2clip: Record<string, number> = {
-                        off: 0,
-                        '1': 1,
-                        '2': 2,
-                        '3': 3,
-                        '4': 4,
-                        '5': 5,
-                        '1-3': 13,
-                        '3-5': 35,
-                        on: 100,
-                    }
-                    return modes2clip[val]
-                },
-            })
-        }
-
-        this.addOptionalSensorField(
-            config,
-            0x32e,
-            'capacity',
-            'Capacity nominal',
-            undefined,
-            {
-                device_class: 'power',
-                unit_of_measurement: 'kW',
-                suggested_display_precision: 1,
-            },
-            (raw) => (raw !== 0 ? Math.round(raw * 0.293 * 10) / 10 : undefined),
-        ) // raw is in kBTU / hour
-
-        /*
-         * Whether the IDU will report its EEV opening correctly during its
-         * active operation is highly inconsistent between IDUs.
-         * For example, from two Standard2 IDUs with 0x690409 software version
-         * connected to common ODU one IDU works as expected while the other
-         * one reports the EEV opening value of the other Standard2 IDU (?).
-         * This may be an ODU firmware bug. On the other hand, another Deluxe
-         * IDU connected to the same ODU always reports correct EEV values.
-         * None of tested IDUs seem to usually notify by itself when this value changes.
-         */
-        this.addOptionalSensorField(config, 0x330, 'eev', 'EEV opening', 'mdi:valve', {
-            state_class: 'measurement',
-            suggested_display_precision: 0,
-        })
-
-        /*
-         * IDUs send notifications about the updates of the temperatures below
-         * at their own pace, sometimes in clusters with other attributes.
-         * Deluxe IDUs send notifications noticeably more often than Standard2 IDUs.
-         *
-         * Pipe temps are sometimes reported as 0 (-100 C) for a moment after a shutdown.
-         * Make sure to filter out such updates.
-         */
-        this.addOptionalSensorTempField(
-            config,
-            0x2f9,
-            'pipeintemp',
-            'Pipe liquid temperature',
-            'mdi:pipe',
-            (raw) => racPipeTemp[255 - raw],
-        )
-        this.addOptionalSensorTempField(
-            config,
-            0x2fa,
-            'pipeouttemp',
-            'Pipe gas temperature',
-            'mdi:pipe',
-            (raw) => racPipeTemp[255 - raw],
-        )
-
-        this.addOptionalSensorTempField(
-            config,
-            [0x7a, 0x32c],
-            'oduhextemp',
-            'ODU HEX temperature', // "HEX" = "heat exchanger"
-            'mdi:heating-coil',
-            (raw) => racPipeTemp[255 - raw],
-        )
-        this.addOptionalSensorTempField(
-            config,
-            0x332,
-            'oduairtemp',
-            'ODU air temperature',
-            'mdi:thermometer-lines',
-            (raw) => racAirTemp[255 - raw],
-        )
-
-        /*
-         * [ 0x22a, 0x32f ] - ODU compressor Hz
-         * Standard2 IDUs even notify about the former
-         * tag changes.
-         *
-         * But the value seems to be capped at 15 Hz
-         * regardless of the actual compressor speed,
-         * which makes it of limited usability.
-         */
-
-        // 0x2fb is the target fan RPM, while this is the current RPM
-        this.addOptionalSensorField(
-            config,
-            0x331,
-            'fanrpm',
-            'Fan RPM',
-            'mdi:fan',
-            {
-                state_class: 'measurement',
-                unit_of_measurement: 'rpm',
-                suggested_display_precision: 0,
-            },
-            (raw) => raw * 10,
-        )
-
-        if (this.raw_clip_state[0x2cc] & 1) {
-            this.addModeDependentConfigSwitchField(
-                config,
-                0x20f,
-                'airclean',
-                /* Same desc as in lg_thinq */
-                'Air purify',
-                'mdi:air-purifier',
-                'airClean',
-            )
-        }
-
-        const jetCool: boolean = !!(this.raw_clip_state[0x2cd] & 1)
-        const jetHeat: boolean = !!(this.raw_clip_state[0x2cd] & 2)
-        if (isPac910604) {
-            // 이 모델은 쿨파워가 IR 전용 기능이라 TLV로는 제어 불가.
-            // 대신 'cool_power' 가상 모드(18도+강풍 매크로)로 대체함 — 위 mode 필드 참고
-        } else if (jetCool || jetHeat) {
-            this.addJetField(
-                config,
-                0x323,
-                'jet',
-                isPac910604 ? 'Cool power' : 'Jet',
-                'mdi:wind-power',
-                jetCool,
-                jetHeat,
-            )
-        }
-
-        if (this.raw_clip_state[0x2d3] & 1) {
-            // 15h - displayed in hex as "FH"
-            this.addTimerField(config, 0x21a, 'sleeptimer', 'Sleep timer', 'mdi:bed-clock', 15)
-        }
-
-        if (this.raw_clip_state[0x2d3] & 4) {
-            this.addTimerField(config, 0x21c, 'starttimer', 'Turn-on timer', 'mdi:timer-play', 24)
-            this.addTimerField(config, 0x21b, 'stoptimer', 'Turn-off timer', 'mdi:timer-stop', 24)
-        }
-
-        if (isPac910604) {
-            // This PAC reports 0x20D in every full state response, so expose a
-            // regular state-backed switch instead of an assumed-state control.
-            this.addConfigSwitchField(config, 0x20d, 'energysave', 'Energy saving', 'mdi:flower')
-        } else if (this.raw_clip_state[0x2cc] & 2) {
-            // Can be enabled only when running in the cooling mode
-            this.addModeDependentConfigSwitchField(
-                config,
-                0x20d,
-                'energysave',
-                'Energy saving',
-                'mdi:flower',
-                'energySave',
-                (mode) => mode === 0,
-            )
-        }
-
-        if (isPac910604) {
-            // PAC_910604_WW reports these live values even though its legacy
-            // 0x2CC capability bits do not advertise them.
-            this.addConfigSwitchField(config, 0x20e, 'autodry', 'Auto dry', 'mdi:hair-dryer')
-        } else if (this.raw_clip_state[0x2cc] & 4) {
-            const compADry = {
-                platform: 'binary_sensor',
-                unique_id: '$deviceid-autodry',
-                name: 'Auto dry',
-                icon: 'mdi:hair-dryer',
-                entity_category: 'diagnostic',
-            }
-            const compADryRem = {
-                platform: 'sensor',
-                unique_id: '$deviceid-autodryremain',
-                name: 'Auto dry remaining',
-                icon: 'mdi:hair-dryer-outline',
-                unit_of_measurement: '%',
-                suggested_display_precision: 0,
-                entity_category: 'diagnostic',
-            }
-            config['components']['autodry'] = compADry
-            config['components']['autodryremain'] = compADryRem
-
-            this.addField(config, {
-                id: 0x20e,
-                name: '',
-                comp: 'autodry',
-                writable: false,
-                read_xform: (raw) => (raw ? 'ON' : 'OFF'),
-            })
-
-            this.addField(config, {
-                id: 0x225,
-                name: '',
-                comp: 'autodryremain',
-                writable: false,
-            })
-        }
-
-        if (isPac910604) {
-            // Live command captures from this model:
-            //   0x21F: front display light (1=on)
-            //   0x23E: smart-care wind mode (1=on)
-            this.addConfigSwitchField(config, 0x21f, 'displaylight', 'Display light', 'mdi:lightbulb')
-            this.addConfigSwitchField(config, 0x23e, 'smartcare', 'Smart care', 'mdi:creation')
-        }
+        // 회전모드(swing) 없는 모델이라 관련 필드 미사용
 
         if (this.getIDUActionRunningTLVNum() != null) {
             this.addField(
@@ -658,17 +334,35 @@ export default class Device extends TLVDevice {
             this.updateClimateAction()
         })
 
-        if (isPac910604) {
-            const coolPower = {
-                platform: 'button',
-                unique_id: '$deviceid-cool_power',
-                name: 'Cool power',
-                icon: 'mdi:snowflake-alert',
-                command_topic: '$this/cool_power/set',
-                payload_press: 'PRESS',
-            }
-            config['components']['cool_power'] = coolPower
+        // This PAC reports 0x20D in every full state response, so expose a
+        // regular state-backed switch instead of an assumed-state control.
+        this.addConfigSwitchField(config, 0x20d, 'energysave', 'Energy saving', 'mdi:flower')
+
+        // PAC_910604_WW reports these live values even though its legacy
+        // 0x2CC capability bits do not advertise them.
+        this.addConfigSwitchField(config, 0x20e, 'autodry', 'Auto dry', 'mdi:hair-dryer')
+
+        // Live command captures from this model:
+        //   0x21F: front display light (1=on)
+        //   0x23E: smart-care wind mode (1=on) - 리모컨 '스마트케어' 버튼과 동일
+        this.addConfigSwitchField(config, 0x21f, 'displaylight', 'Display light', 'mdi:lightbulb')
+        this.addConfigSwitchField(config, 0x23e, 'smartcare', 'Smart care', 'mdi:creation')
+
+        this.addTimerField(config, 0x21a, 'sleeptimer', 'Sleep timer', 'mdi:bed-clock', 15)
+        this.addTimerField(config, 0x21c, 'starttimer', 'Turn-on timer', 'mdi:timer-play', 24)
+        this.addTimerField(config, 0x21b, 'stoptimer', 'Turn-off timer', 'mdi:timer-stop', 24)
+
+        // 이 모델은 쿨파워가 IR 전용 기능이라 TLV로는 제어 불가.
+        // 리모컨 쿨파워와 동일한 결과(냉방+18도+강풍)를 흉내내는 버튼으로 대체.
+        const coolPower = {
+            platform: 'button',
+            unique_id: '$deviceid-cool_power',
+            name: 'Cool power',
+            icon: 'mdi:snowflake-alert',
+            command_topic: '$this/cool_power/set',
+            payload_press: 'PRESS',
         }
+        config['components']['cool_power'] = coolPower
 
         this.setConfig(config)
 
@@ -714,87 +408,6 @@ export default class Device extends TLVDevice {
         })
     }
 
-    addJetField(
-        config: DeviceDiscovery,
-        id: number,
-        name: string,
-        desc: string,
-        icon: string,
-        jetCool: boolean,
-        jetHeat: boolean,
-    ) {
-        const descFull =
-            desc === 'Cool power'
-                ? desc
-                : desc + ' ' + (jetCool ? 'cool' : '') + (jetCool && jetHeat ? '/' : '') + (jetHeat ? 'heat' : '')
-
-        const comp = {
-            platform: 'switch',
-            unique_id: '$deviceid-' + name,
-            name: descFull,
-            icon: icon,
-            entity_category: 'config',
-            optimistic: true,
-        }
-        config['components'][name] = comp
-
-        this.addField(config, {
-            id: id,
-            name: '',
-            comp: name,
-            write_xform: (val) => {
-                this.jetMode = val === 'ON'
-                if (!this.jetMode) return 0
-
-                /* ON */
-                if (jetCool && this.getModeTLV() === 0) return 1
-                if (jetHeat && this.getModeTLV() === 4) return 2
-                return 0
-            },
-            read_xform: (raw) => {
-                if (jetCool && this.getModeTLV() === 0 && raw == 1) return 'ON'
-                if (jetHeat && this.getModeTLV() === 4 && raw == 2) return 'ON'
-                return 'OFF'
-            },
-            read_callback: (val) => {
-                // Ignore read value if not running
-                const powerTLV = this.getPowerTLV()
-                if (powerTLV === 0 || powerTLV == null) return false
-
-                // Ignore read value if not in the right mode
-                if (!((jetCool && this.getModeTLV() === 0) || (jetHeat && this.getModeTLV() === 4))) return false
-
-                this.jetMode = val === 'ON'
-                return true
-            },
-            write_callback: (val) => {
-                /*
-                 * Writing '1' in OFF state seem to immediately
-                 * power on into the cooling mode, while writing
-                 * '2' in the OFF state is ignored.
-                 * Be consistent and only allow enabling Jet mode
-                 * when running in the right mode.
-                 */
-                return (
-                    this.getPowerTLV() !== 0 &&
-                    ((jetCool && this.getModeTLV() === 0) || (jetHeat && this.getModeTLV() === 4))
-                )
-            },
-        })
-
-        /*
-         * This value needs to be written at each power up in heat/cool mode,
-         * but in a separate message.
-         */
-        this.powerChangeHooks.push(() => {
-            if (this.getPowerTLV() === 0) return
-            this.setProperty(name + '-', this.jetMode ? 'ON' : 'OFF')
-        })
-        this.modeChangeHooks.push(() => {
-            this.setProperty(name + '-', this.jetMode ? 'ON' : 'OFF')
-        })
-    }
-
     addOptionalSensorField(
         config: DeviceDiscovery,
         ids: number | number[],
@@ -835,30 +448,6 @@ export default class Device extends TLVDevice {
         })
     }
 
-    addOptionalSensorTempField(
-        config: DeviceDiscovery,
-        ids: number | number[],
-        name: string,
-        desc: string,
-        icon?: string,
-        read_xform?: FieldDefinition['read_xform'],
-    ) {
-        this.addOptionalSensorField(
-            config,
-            ids,
-            name,
-            desc,
-            icon,
-            {
-                device_class: 'temperature',
-                unit_of_measurement: '°C',
-                state_class: 'measurement',
-                suggested_display_precision: 2,
-            },
-            read_xform,
-        )
-    }
-
     private schedulePacFanOnlyStop() {
         if (this.pacFanOnlyStopTimeout != undefined) clearTimeout(this.pacFanOnlyStopTimeout)
         this.pacFanOnlyStopTimeout = setTimeout(() => {
@@ -884,65 +473,5 @@ export default class Device extends TLVDevice {
             write_xform: (val) => (val === 'ON' ? 1 : 0),
             read_xform: (raw) => (raw ? 'ON' : 'OFF'),
         })
-    }
-
-    addModeDependentConfigSwitchField(
-        config: DeviceDiscovery,
-        id: number,
-        name: string,
-        desc: string,
-        icon: string,
-        field_name: 'airClean' | 'jetMode' | 'energySave',
-        check_mode?: CheckMode,
-    ) {
-        const comp = {
-            platform: 'switch',
-            unique_id: '$deviceid-' + name,
-            name: desc,
-            icon: icon,
-            entity_category: 'config',
-            optimistic: true,
-        }
-        config['components'][name] = comp
-
-        this.addField(config, {
-            id: id,
-            name: '',
-            comp: name,
-            write_xform: (val) => (val === 'ON' ? 1 : 0),
-            read_xform: (raw) => (raw ? 'ON' : 'OFF'),
-            read_callback: (val) => {
-                // Ignore read value if not running
-                const powerTLV = this.getPowerTLV()
-                if (powerTLV === 0 || powerTLV == null) return false
-
-                // Ignore read value if not in the right mode
-                if (!!check_mode && !check_mode(this.getModeTLV())) return false
-
-                this[field_name] = val === 'ON'
-                return true
-            },
-            write_callback: (val) => {
-                this[field_name] = val === 1
-
-                // No need to write the value if not running in the right mode
-                return this.getPowerTLV() !== 0 && (!check_mode || check_mode(this.getModeTLV()))
-            },
-        })
-
-        this.powerChangeHooks.push(() => {
-            if (this.getPowerTLV() === 0) return
-            /*
-             * This value needs to be written at each power up,
-             * but in a separate message.
-             */
-            this.setProperty(name + '-', this[field_name] ? 'ON' : 'OFF')
-        })
-
-        if (!!check_mode) {
-            this.modeChangeHooks.push(() => {
-                this.setProperty(name + '-', this[field_name] ? 'ON' : 'OFF')
-            })
-        }
     }
 }
