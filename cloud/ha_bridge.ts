@@ -9,9 +9,9 @@ import Dev_2RES1VE61NFA2 from './devices/2RES1VE61NFA2'
 import Dev_2REB1GLVB1__2 from './devices/2REB1GLVB1__2'
 import Dev_2RES1VE600FWC from './devices/2RES1VE600FWC'
 import Dev_2RES2VE300UA2 from './devices/2RES2VE300UA2'
-import Dev_2REF12EBN___2 from './devices/2REF12EBN___2'  //naholo
-import Dev_F17VDW_KOR from './devices/F17VDW_KOR'  //naholo
-import Dev_S5MPC from './devices/S5MPC'  //naholo
+import Dev_2REF12EBN___2 from './devices/2REF12EBN___2'  //naholo 냉장고
+import Dev_F17VDW_KOR from './devices/F17VDW_KOR'  //naholo 세탁기 
+import Dev_S5MPC from './devices/S5MPC'  //naholo 스타일러
 import Y_V8_Y___W_B32QEUK from './devices/Y_V8_Y___W.B32QEUK'
 import F_V8_Y___W_B_2QEUK from './devices/F_V8_Y___W.B_2QEUK'
 import Y_V8_F___W_B_2QEUK from './devices/Y_V8_F___W.B_2QEUK'
