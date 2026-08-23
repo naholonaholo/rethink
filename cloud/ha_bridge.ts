@@ -1,7 +1,7 @@
 import POT_056905_WW from './devices/POT_056905_WW'
 import WTDN3 from './devices/WTDN3'
 import RAC_056905_WW from './devices/RAC_056905_WW'
-import PAC_910604_WW from './devices/PAC_910604_WW'
+import PAC_910604_WW from './devices/PAC_910604_WW'  //naholo 에어컨
 import WIN_056905_WW from './devices/WIN_056905_WW'
 import Dev_2REF11EIDA__4 from './devices/2REF11EIDA__4'
 import Dev_2REF11EBIVPC4 from './devices/2REF11EBIVPC4'
