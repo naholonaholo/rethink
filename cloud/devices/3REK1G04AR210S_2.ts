@@ -6,18 +6,24 @@ import { type Metadata } from '../thinq'
 
 // Live-captured raw commands for the kimchi fridge (3REK1G04AR210S_2).
 // Format: aa 0f f0 e5 00 02 01 ff 01 00 [ROOM] 00 [VALUE] [checksum] bb
-// Captured directly from app control, so these are known-good regardless
-// of the (not yet reverse-engineered) checksum algorithm.
+// Captured directly from app control, cross-checked against the
+// LG cloud "kmcState" reflection (roomNTemp) received via Bridge, so the
+// value <-> label mapping below is confirmed, not guessed.
+//
+// 2026-08-24 재검증: room1(좌칸)과 room3(중칸)의 기존 값 매핑이 실제로는
+// 틀려 있었음 (클라우드 kmcState.roomNTemp와 대조해서 정정함).
+// room2(우칸), room4(하칸)는 재검증 결과 기존 값이 정확해서 그대로 둠.
 
 const ROOM1_COMMANDS = {
-    // 좌칸 (2-door compartment)
-    맛지킴약: Buffer.from('aa0ff0e5000201ff0100010000c7bb', 'hex'),
-    맛지킴중: Buffer.from('aa0ff0e5000201ff0100010001c6bb', 'hex'),
-    익힘: Buffer.from('aa0ff0e5000201ff0100010002c1bb', 'hex'),
+    // 좌칸 (2-door compartment) - 옵션 4개만 있음
+    맛지킴중: Buffer.from('aa0ff0e5000201ff0100010000c7bb', 'hex'),
+    맛지킴강: Buffer.from('aa0ff0e5000201ff0100010001c6bb', 'hex'),
+    맛지킴약: Buffer.from('aa0ff0e5000201ff0100010002c1bb', 'hex'),
+    익힘: Buffer.from('aa0ff0e5000201ff0100010007ccbb', 'hex'),
 } as const
 
 const ROOM2_COMMANDS = {
-    // 우칸 (냉장)
+    // 우칸 (냉장) - 재검증 결과 기존 값 그대로 정확함
     냉장중: Buffer.from('aa0ff0e5000201ff0100020003c3bb', 'hex'),
     냉장강: Buffer.from('aa0ff0e5000201ff0100020004c2bb', 'hex'),
     냉장약: Buffer.from('aa0ff0e5000201ff0100020005cdbb', 'hex'),
@@ -25,16 +31,16 @@ const ROOM2_COMMANDS = {
 
 const ROOM3_COMMANDS = {
     // 중칸 (5-door compartment, more options)
-    맛지킴약: Buffer.from('aa0ff0e5000201ff0100030000c1bb', 'hex'),
-    맛지킴중: Buffer.from('aa0ff0e5000201ff0100030001c0bb', 'hex'),
-    맛지킴강: Buffer.from('aa0ff0e5000201ff0100030002c3bb', 'hex'),
-    구입김치: Buffer.from('aa0ff0e5000201ff0100030002c3bb', 'hex'), // note: same code as 맛지킴강 (captured as-is)
-    '유산균+': Buffer.from('aa0ff0e5000201ff0100030006cfbb', 'hex'),
-    익힘: Buffer.from('aa0ff0e5000201ff0100030007cebb', 'hex'),
+    맛지킴중: Buffer.from('aa0ff0e5000201ff0100030000c1bb', 'hex'),
+    맛지킴강: Buffer.from('aa0ff0e5000201ff0100030001c0bb', 'hex'),
+    맛지킴약: Buffer.from('aa0ff0e5000201ff0100030002c3bb', 'hex'),
+    구입김치: Buffer.from('aa0ff0e5000201ff0100030006cfbb', 'hex'),
+    '유산균+': Buffer.from('aa0ff0e5000201ff0100030007cebb', 'hex'),
+    익힘: Buffer.from('aa0ff0e5000201ff010003000bcabb', 'hex'),
 } as const
 
 const ROOM4_COMMANDS = {
-    // 하칸 (야채/과일)
+    // 하칸 (야채/과일) - 재검증 결과 기존 값 그대로 정확함
     야채중: Buffer.from('aa0ff0e5000201ff0100040003cdbb', 'hex'),
     야채강: Buffer.from('aa0ff0e5000201ff0100040004ccbb', 'hex'),
     야채약: Buffer.from('aa0ff0e5000201ff0100040005cfbb', 'hex'),
@@ -126,15 +132,41 @@ export default class Device extends HADevice {
                         options: Object.keys(NIGHT_ANTI_GLARE_COMMANDS),
                         optimistic: true,
                     },
+                    door: {
+                        // 좌/우/중/하칸 구분 없이 "문 중 하나라도 열림"을 나타내는
+                        // 단일 플래그. 2026-08-24 캡처에서 4개 칸 전부 open/close
+                        // 4회 사이클 동안 동일 패턴으로 100% 일치 확인됨.
+                        platform: 'binary_sensor',
+                        unique_id: '$deviceid-door',
+                        name: '문 열림',
+                        device_class: 'door',
+                        state_topic: '$this/door',
+                    },
                 },
             }),
         )
 
-        // 진단용: 원시 패킷을 계속 콘솔에 남겨서, 추후 상태읽기(read) 디코딩을
+        // 진단용: 원시 패킷을 계속 콘솔에 남겨서, 추후 칸별 온도값(read) 디코딩을
         // 시도할 때 참고 자료로 쓸 수 있게 함. 기능에는 영향 없음.
         thinq.on('data', (buf: Buffer) => {
             console.log(`[KIMCHI-RAW ${thinq.id}] len=${buf.length} hex=${buf.toString('hex')}`)
+
+            // 문 열림/닫힘 알림 프레임: 11ec + [이전상태 12바이트] + [현재상태 12바이트]
+            // 현재상태 청크(offset 14)의 offset 22 위치가 문 열림(1)/닫힘(0) 플래그.
+            // (2026-08-24 캡처, open/close 4회 사이클 모두 일치 확인)
+            if (buf.length === 26 && buf[0] === 0x11 && buf[1] === 0xec) {
+                const doorOpen = buf[22] === 0x01
+                this.publishProperty('door', doorOpen ? 'ON' : 'OFF')
+            }
         })
+    }
+
+    publishCache: Record<string, string | number> = {}
+
+    publishProperty(prop: string, value: string | number) {
+        if (this.publishCache[prop] === value) return
+        this.publishCache[prop] = value
+        this.HA.publishProperty(this.id, prop, value)
     }
 
     setProperty(prop: string, mqttValue: string) {
