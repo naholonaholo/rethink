@@ -1,6 +1,7 @@
 import HADevice from './base'
 import { Device as Thinq2Device } from '../thinq2/device'
 import { type Connection } from '../homeassistant'
+import { allowExtendedType } from '@/util/casting'
 import { type Metadata } from '../thinq'
 
 // Live-captured raw commands for the kimchi fridge (3REK1G04AR210S_2).
@@ -62,70 +63,72 @@ export default class Device extends HADevice {
     ) {
         super(HA, thinq.id)
 
-        this.setConfig({
-            ...HADevice.config(meta, { name: 'LG Kimchi Fridge' }),
-            components: {
-                room1: {
-                    platform: 'select',
-                    unique_id: '$deviceid-room1',
-                    name: '좌칸',
-                    icon: 'mdi:fridge-outline',
-                    command_topic: '$this/room1/set',
-                    state_topic: '$this/room1',
-                    options: Object.keys(ROOM1_COMMANDS),
-                    optimistic: true,
+        this.setConfig(
+            allowExtendedType({
+                ...HADevice.config(meta, { name: 'LG Kimchi Fridge' }),
+                components: {
+                    room1: {
+                        platform: 'select',
+                        unique_id: '$deviceid-room1',
+                        name: '좌칸',
+                        icon: 'mdi:fridge-outline',
+                        command_topic: '$this/room1/set',
+                        state_topic: '$this/room1',
+                        options: Object.keys(ROOM1_COMMANDS),
+                        optimistic: true,
+                    },
+                    room2: {
+                        platform: 'select',
+                        unique_id: '$deviceid-room2',
+                        name: '우칸',
+                        icon: 'mdi:fridge-outline',
+                        command_topic: '$this/room2/set',
+                        state_topic: '$this/room2',
+                        options: Object.keys(ROOM2_COMMANDS),
+                        optimistic: true,
+                    },
+                    room3: {
+                        platform: 'select',
+                        unique_id: '$deviceid-room3',
+                        name: '중칸',
+                        icon: 'mdi:fridge-outline',
+                        command_topic: '$this/room3/set',
+                        state_topic: '$this/room3',
+                        options: Object.keys(ROOM3_COMMANDS),
+                        optimistic: true,
+                    },
+                    room4: {
+                        platform: 'select',
+                        unique_id: '$deviceid-room4',
+                        name: '하칸',
+                        icon: 'mdi:fridge-outline',
+                        command_topic: '$this/room4/set',
+                        state_topic: '$this/room4',
+                        options: Object.keys(ROOM4_COMMANDS),
+                        optimistic: true,
+                    },
+                    onetouchfilter: {
+                        platform: 'switch',
+                        unique_id: '$deviceid-onetouchfilter',
+                        name: '원터치 탈취',
+                        icon: 'mdi:air-purifier',
+                        command_topic: '$this/onetouchfilter/set',
+                        state_topic: '$this/onetouchfilter',
+                        optimistic: true,
+                    },
+                    nightantiglare: {
+                        platform: 'select',
+                        unique_id: '$deviceid-nightantiglare',
+                        name: '야간 눈부심 방지',
+                        icon: 'mdi:weather-night',
+                        command_topic: '$this/nightantiglare/set',
+                        state_topic: '$this/nightantiglare',
+                        options: Object.keys(NIGHT_ANTI_GLARE_COMMANDS),
+                        optimistic: true,
+                    },
                 },
-                room2: {
-                    platform: 'select',
-                    unique_id: '$deviceid-room2',
-                    name: '우칸',
-                    icon: 'mdi:fridge-outline',
-                    command_topic: '$this/room2/set',
-                    state_topic: '$this/room2',
-                    options: Object.keys(ROOM2_COMMANDS),
-                    optimistic: true,
-                },
-                room3: {
-                    platform: 'select',
-                    unique_id: '$deviceid-room3',
-                    name: '중칸',
-                    icon: 'mdi:fridge-outline',
-                    command_topic: '$this/room3/set',
-                    state_topic: '$this/room3',
-                    options: Object.keys(ROOM3_COMMANDS),
-                    optimistic: true,
-                },
-                room4: {
-                    platform: 'select',
-                    unique_id: '$deviceid-room4',
-                    name: '하칸',
-                    icon: 'mdi:fridge-outline',
-                    command_topic: '$this/room4/set',
-                    state_topic: '$this/room4',
-                    options: Object.keys(ROOM4_COMMANDS),
-                    optimistic: true,
-                },
-                onetouchfilter: {
-                    platform: 'switch',
-                    unique_id: '$deviceid-onetouchfilter',
-                    name: '원터치 탈취',
-                    icon: 'mdi:air-purifier',
-                    command_topic: '$this/onetouchfilter/set',
-                    state_topic: '$this/onetouchfilter',
-                    optimistic: true,
-                },
-                nightantiglare: {
-                    platform: 'select',
-                    unique_id: '$deviceid-nightantiglare',
-                    name: '야간 눈부심 방지',
-                    icon: 'mdi:weather-night',
-                    command_topic: '$this/nightantiglare/set',
-                    state_topic: '$this/nightantiglare',
-                    options: Object.keys(NIGHT_ANTI_GLARE_COMMANDS),
-                    optimistic: true,
-                },
-            },
-        })
+            }),
+        )
 
         // 진단용: 원시 패킷을 계속 콘솔에 남겨서, 추후 상태읽기(read) 디코딩을
         // 시도할 때 참고 자료로 쓸 수 있게 함. 기능에는 영향 없음.
