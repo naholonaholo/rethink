@@ -12,6 +12,7 @@ import Dev_2RES2VE300UA2 from './devices/2RES2VE300UA2'
 import Dev_2REF12EBN___2 from './devices/2REF12EBN___2'  //naholo 냉장고
 import Dev_F17VDW_KOR from './devices/F17VDW_KOR'  //naholo 세탁기 
 import Dev_S5MPC from './devices/S5MPC'  //naholo 스타일러
+import Dev_RH14_N_KR from './devices/RH14_N_KR'  //naholo 건조기
 import Y_V8_Y___W_B32QEUK from './devices/Y_V8_Y___W.B32QEUK'
 import F_V8_Y___W_B_2QEUK from './devices/F_V8_Y___W.B_2QEUK'
 import Y_V8_F___W_B_2QEUK from './devices/Y_V8_F___W.B_2QEUK'
@@ -51,6 +52,7 @@ const t2deviceTypes: Record<string, T2Factory> = {
     ['2RES1VE600FWC']: Dev_2RES1VE600FWC,
     ['2RES2VE300UA2']: Dev_2RES2VE300UA2, // Korean refrigerator
     ['S5MPC']: Dev_S5MPC,  //naholo
+    ['RH14_N_KR']: Dev_RH14_N_KR,  //naholo
     ['Y_V8_Y___W.B32QEUK']: Y_V8_Y___W_B32QEUK,
     ['F_V7_Y___W.B_2QEUK']: F_V8_Y___W_B_2QEUK, // NOTE: we reuse F_V8_Y___W_B_2QEUK as the models appear to be compatible
     ['F_V8_Y___W.B_2QEUK']: F_V8_Y___W_B_2QEUK,
