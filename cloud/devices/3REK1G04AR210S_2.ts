@@ -75,12 +75,12 @@ const ROOM3_COMMANDS = {
 
 const ROOM4_COMMANDS = {
     // 하칸 - 기존 야채/과일중/강/약 + 2026-08-26 확장: 맛지킴중/강/약, 오래보관, 육류생선
-    '맛지킴(중): Buffer.from('aa0ff0e5000201ff0100040000c0bb', 'hex'),
-    '맛지킴(강): Buffer.from('aa0ff0e5000201ff0100040001c3bb', 'hex'),
-    '맛지킴(약): Buffer.from('aa0ff0e5000201ff0100040002c2bb', 'hex'),
-    '과일/야채(중): Buffer.from('aa0ff0e5000201ff0100040003cdbb', 'hex'),
-    '과일/야채(강): Buffer.from('aa0ff0e5000201ff0100040004ccbb', 'hex'),
-    '과일/야채(약): Buffer.from('aa0ff0e5000201ff0100040005cfbb', 'hex'),
+    '맛지킴(중)': Buffer.from('aa0ff0e5000201ff0100040000c0bb', 'hex'),
+    '맛지킴(강)': Buffer.from('aa0ff0e5000201ff0100040001c3bb', 'hex'),
+    '맛지킴(약)': Buffer.from('aa0ff0e5000201ff0100040002c2bb', 'hex'),
+    '과일/야채(중)': Buffer.from('aa0ff0e5000201ff0100040003cdbb', 'hex'),
+    '과일/야채(강)': Buffer.from('aa0ff0e5000201ff0100040004ccbb', 'hex'),
+    '과일/야채(약)': Buffer.from('aa0ff0e5000201ff0100040005cfbb', 'hex'),
     '육류/생선': Buffer.from('aa0ff0e5000201ff0100040007c9bb', 'hex'),
     '맛지킴(오래보관)': Buffer.from('aa0ff0e5000201ff0100040008c8bb', 'hex'),
 } as const
