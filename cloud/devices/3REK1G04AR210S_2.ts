@@ -33,10 +33,15 @@ import { type Metadata } from '../thinq'
 //   13으로 추정되나, 캡처 중 그 상태에서 멈추지 않고 지나쳐서 100% 확정은 아님
 //   (TODO: 재캡처로 확정 필요).
 // - 하칸(room4): 기존 야채/과일중/강/약에 맛지킴중/강/약/오래보관(0/1/2/8)·
-//   육류,생선(7) 추가, write 직전 note로 확정. "쌀,잡곡"과 "하칸꺼짐" 둘 다
-//   write 미캡처 — 터치판 연타 구간에서 새 값 9가 딱 한 번만 등장해서 두 모드 중
-//   어느 쪽인지, 나머지 하나의 값이 무엇인지 구분 불가 (TODO: 재캡처로 확정 필요,
-//   그때까지 미구현).
+//   육류,생선(7) 추가, write 직전 note로 확정.
+//
+// 2026-08-27 하칸(room4) "쌀,잡곡"/"하칸꺼짐" 확정 (kimchi-capture.jsonl):
+// 터치판에서 두 조작을 시간 나눠서(15:44:30 쌀/잡곡, 15:45:00 하칸꺼짐) 진행,
+// 11ec 상태 프레임의 current[4] 값 전환 타이밍과 1초 이내로 정확히 일치:
+//   15:44:31 프레임에서 current[4] 5→6 (쌀/잡곡 조작 직후) → 쌀,잡곡 = 6
+//   15:45:01 프레임에서 current[4] 8→9 (하칸꺼짐 조작 직후) → 하칸꺼짐 = 9
+// 다만 이번에도 write 커맨드(f0e5)는 캡쳐되지 않음 (터치판 직접 조작이라
+// room1 냉동, room3 중칸꺼짐과 동일하게 read-only 취급).
 
 const ROOM1_COMMANDS = {
     // 좌칸 (2-door compartment)
@@ -118,9 +123,12 @@ const ROOM3_READONLY_STATES = {
     중칸꺼짐: 13,
 } as const
 
-// room4의 "쌀,잡곡"과 "하칸꺼짐"은 아직 값을 확정하지 못해 미포함.
-// 터치판 연타 캡처에서 새 값 9가 한 번만 나와서 둘 중 어느 쪽인지 불명확.
-// 재캡처로 확정되면 여기에 ROOM4_READONLY_STATES로 추가 예정.
+const ROOM4_READONLY_STATES = {
+    // 2026-08-27 확정: 터치판 조작 시각(15:44:30/15:45:00)과 11ec 상태 프레임의
+    // current[4] 전환 타이밍이 1초 이내로 정확히 일치해서 확정.
+    '쌀,잡곡': 6,
+    하칸꺼짐: 9,
+} as const
 
 // --- 상태 read 프레임(11ec)용 역방향 매핑 -------------------------------
 // 커맨드 버퍼 포맷: aa 0f f0 e5 00 02 01 ff 01 00 [ROOM] 00 [VALUE] [checksum] bb
@@ -155,7 +163,10 @@ for (const [label, value] of Object.entries(ROOM3_READONLY_STATES)) {
 const ROOM3_OPTIONS = [...Object.keys(ROOM3_COMMANDS), ...Object.keys(ROOM3_READONLY_STATES)]
 
 const ROOM4_VALUES = buildValueMap(ROOM4_COMMANDS)
-const ROOM4_OPTIONS = [...Object.keys(ROOM4_COMMANDS)]
+for (const [label, value] of Object.entries(ROOM4_READONLY_STATES)) {
+    ROOM4_VALUES.set(value, label)
+}
+const ROOM4_OPTIONS = [...Object.keys(ROOM4_COMMANDS), ...Object.keys(ROOM4_READONLY_STATES)]
 
 export default class Device extends HADevice {
     constructor(
@@ -242,8 +253,8 @@ export default class Device extends HADevice {
             }),
         )
 
-        // 진단용: 원시 패킷을 계속 콘솔에 남겨서, 추후 room4의 쌀잡곡/하칸꺼짐 등
-        // 미확정 값을 재캡처할 때 참고 자료로 쓸 수 있게 함. 기능에는 영향 없음.
+        // 진단용: 원시 패킷을 계속 콘솔에 남겨서, 추후 미확정 값을 재캡처할 때
+        // 참고 자료로 쓸 수 있게 함. 기능에는 영향 없음.
         thinq.on('data', (buf: Buffer) => {
             console.log(`[KIMCHI-RAW ${thinq.id}] len=${buf.length} hex=${buf.toString('hex')}`)
 
@@ -277,10 +288,7 @@ export default class Device extends HADevice {
 
                 const room4 = ROOM4_VALUES.get(current[4])
                 if (room4 !== undefined) this.publishProperty('room4', room4)
-                else
-                    console.log(
-                        `[KIMCHI-RAW ${thinq.id}] room4 미확인 값=${current[4]} (쌀잡곡/하칸꺼짐 재캡처용 참고)`,
-                    )
+                else console.log(`[KIMCHI-RAW ${thinq.id}] room4 미확인 값=${current[4]}`)
 
                 this.publishProperty('onetouchfilter', current[6] === 0x01 ? 'ON' : 'OFF')
             }
@@ -320,6 +328,7 @@ export default class Device extends HADevice {
                 }
                 return
             case 'room4':
+                // 쌀,잡곡/하칸꺼짐(ROOM4_READONLY_STATES)은 마찬가지로 write 불가.
                 if (mqttValue in ROOM4_COMMANDS) {
                     this.thinq.send_packet(ROOM4_COMMANDS[mqttValue as keyof typeof ROOM4_COMMANDS])
                     this.HA.publishProperty(this.id, 'room4', mqttValue)
