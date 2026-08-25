@@ -40,34 +40,34 @@ import { type Metadata } from '../thinq'
 
 const ROOM1_COMMANDS = {
     // 좌칸 (2-door compartment)
-    맛지킴중: Buffer.from('aa0ff0e5000201ff0100010000c7bb', 'hex'),
-    맛지킴강: Buffer.from('aa0ff0e5000201ff0100010001c6bb', 'hex'),
-    맛지킴약: Buffer.from('aa0ff0e5000201ff0100010002c1bb', 'hex'),
-    냉장중: Buffer.from('aa0ff0e5000201ff0100010003c0bb', 'hex'),
-    냉장강: Buffer.from('aa0ff0e5000201ff0100010004c3bb', 'hex'),
-    냉장약: Buffer.from('aa0ff0e5000201ff0100010005c2bb', 'hex'),
+    '맛지킴(중)': Buffer.from('aa0ff0e5000201ff0100010000c7bb', 'hex'),
+    '맛지킴(강)': Buffer.from('aa0ff0e5000201ff0100010001c6bb', 'hex'),
+    '맛지킴(약)': Buffer.from('aa0ff0e5000201ff0100010002c1bb', 'hex'),
+    '냉장(중)': Buffer.from('aa0ff0e5000201ff0100010003c0bb', 'hex'),
+    '냉장(강)': Buffer.from('aa0ff0e5000201ff0100010004c3bb', 'hex'),
+    '냉장(약)': Buffer.from('aa0ff0e5000201ff0100010005c2bb', 'hex'),
     익힘: Buffer.from('aa0ff0e5000201ff0100010007ccbb', 'hex'),
 } as const
 
 const ROOM2_COMMANDS = {
     // 우칸 - 기존 냉장중/강/약 + 2026-08-26 확장: 맛지킴중/강/약, 익힘
-    맛지킴중: Buffer.from('aa0ff0e5000201ff0100020000c6bb', 'hex'),
-    맛지킴강: Buffer.from('aa0ff0e5000201ff0100020001c1bb', 'hex'),
-    맛지킴약: Buffer.from('aa0ff0e5000201ff0100020002c0bb', 'hex'),
-    냉장중: Buffer.from('aa0ff0e5000201ff0100020003c3bb', 'hex'),
-    냉장강: Buffer.from('aa0ff0e5000201ff0100020004c2bb', 'hex'),
-    냉장약: Buffer.from('aa0ff0e5000201ff0100020005cdbb', 'hex'),
+    '맛지킴(중)': Buffer.from('aa0ff0e5000201ff0100020000c6bb', 'hex'),
+    '맛지킴(강)': Buffer.from('aa0ff0e5000201ff0100020001c1bb', 'hex'),
+    '맛지킴(약)': Buffer.from('aa0ff0e5000201ff0100020002c0bb', 'hex'),
+    '냉장(중)': Buffer.from('aa0ff0e5000201ff0100020003c3bb', 'hex'),
+    '냉장(강)': Buffer.from('aa0ff0e5000201ff0100020004c2bb', 'hex'),
+    '냉장(약)': Buffer.from('aa0ff0e5000201ff0100020005cdbb', 'hex'),
     익힘: Buffer.from('aa0ff0e5000201ff0100020007cfbb', 'hex'),
 } as const
 
 const ROOM3_COMMANDS = {
     // 중칸 (5-door compartment) - 기존 + 2026-08-26 확장: 야채/과일중/강/약
-    맛지킴중: Buffer.from('aa0ff0e5000201ff0100030000c1bb', 'hex'),
-    맛지킴강: Buffer.from('aa0ff0e5000201ff0100030001c0bb', 'hex'),
-    맛지킴약: Buffer.from('aa0ff0e5000201ff0100030002c3bb', 'hex'),
-    야채중: Buffer.from('aa0ff0e5000201ff0100030003c2bb', 'hex'),
-    야채강: Buffer.from('aa0ff0e5000201ff0100030004cdbb', 'hex'),
-    야채약: Buffer.from('aa0ff0e5000201ff0100030005ccbb', 'hex'),
+    '맛지킴(중)': Buffer.from('aa0ff0e5000201ff0100030000c1bb', 'hex'),
+    '맛지킴(강)': Buffer.from('aa0ff0e5000201ff0100030001c0bb', 'hex'),
+    '맛지킴(약)': Buffer.from('aa0ff0e5000201ff0100030002c3bb', 'hex'),
+    '과일/야채(중)': Buffer.from('aa0ff0e5000201ff0100030003c2bb', 'hex'),
+    '과일/야채(강)': Buffer.from('aa0ff0e5000201ff0100030004cdbb', 'hex'),
+    '과일/야채(약)': Buffer.from('aa0ff0e5000201ff0100030005ccbb', 'hex'),
     구입김치: Buffer.from('aa0ff0e5000201ff0100030006cfbb', 'hex'),
     '유산균+': Buffer.from('aa0ff0e5000201ff0100030007cebb', 'hex'),
     익힘: Buffer.from('aa0ff0e5000201ff010003000bcabb', 'hex'),
@@ -75,14 +75,14 @@ const ROOM3_COMMANDS = {
 
 const ROOM4_COMMANDS = {
     // 하칸 - 기존 야채/과일중/강/약 + 2026-08-26 확장: 맛지킴중/강/약, 오래보관, 육류생선
-    맛지킴중: Buffer.from('aa0ff0e5000201ff0100040000c0bb', 'hex'),
-    맛지킴강: Buffer.from('aa0ff0e5000201ff0100040001c3bb', 'hex'),
-    맛지킴약: Buffer.from('aa0ff0e5000201ff0100040002c2bb', 'hex'),
-    야채중: Buffer.from('aa0ff0e5000201ff0100040003cdbb', 'hex'),
-    야채강: Buffer.from('aa0ff0e5000201ff0100040004ccbb', 'hex'),
-    야채약: Buffer.from('aa0ff0e5000201ff0100040005cfbb', 'hex'),
-    육류생선: Buffer.from('aa0ff0e5000201ff0100040007c9bb', 'hex'),
-    맛지킴오래보관: Buffer.from('aa0ff0e5000201ff0100040008c8bb', 'hex'),
+    '맛지킴(중): Buffer.from('aa0ff0e5000201ff0100040000c0bb', 'hex'),
+    '맛지킴(강): Buffer.from('aa0ff0e5000201ff0100040001c3bb', 'hex'),
+    '맛지킴(약): Buffer.from('aa0ff0e5000201ff0100040002c2bb', 'hex'),
+    '과일/야채(중): Buffer.from('aa0ff0e5000201ff0100040003cdbb', 'hex'),
+    '과일/야채(강): Buffer.from('aa0ff0e5000201ff0100040004ccbb', 'hex'),
+    '과일/야채(약): Buffer.from('aa0ff0e5000201ff0100040005cfbb', 'hex'),
+    '육류/생선': Buffer.from('aa0ff0e5000201ff0100040007c9bb', 'hex'),
+    '맛지킴(오래보관)': Buffer.from('aa0ff0e5000201ff0100040008c8bb', 'hex'),
 } as const
 
 const ONE_TOUCH_FILTER_COMMANDS = {
@@ -172,7 +172,7 @@ export default class Device extends HADevice {
                     room1: {
                         platform: 'select',
                         unique_id: '$deviceid-room1',
-                        name: '좌칸',
+                        name: '1.좌칸',
                         icon: 'mdi:fridge-outline',
                         command_topic: '$this/room1/set',
                         state_topic: '$this/room1',
@@ -182,7 +182,7 @@ export default class Device extends HADevice {
                     room2: {
                         platform: 'select',
                         unique_id: '$deviceid-room2',
-                        name: '우칸',
+                        name: '2.우칸',
                         icon: 'mdi:fridge-outline',
                         command_topic: '$this/room2/set',
                         state_topic: '$this/room2',
@@ -192,7 +192,7 @@ export default class Device extends HADevice {
                     room3: {
                         platform: 'select',
                         unique_id: '$deviceid-room3',
-                        name: '중칸',
+                        name: '3.중칸',
                         icon: 'mdi:fridge-outline',
                         command_topic: '$this/room3/set',
                         state_topic: '$this/room3',
@@ -202,7 +202,7 @@ export default class Device extends HADevice {
                     room4: {
                         platform: 'select',
                         unique_id: '$deviceid-room4',
-                        name: '하칸',
+                        name: '4.하칸',
                         icon: 'mdi:fridge-outline',
                         command_topic: '$this/room4/set',
                         state_topic: '$this/room4',
