@@ -13,13 +13,30 @@ import { type Metadata } from '../thinq'
 // 2026-08-24 재검증: room1(좌칸)과 room3(중칸)의 기존 값 매핑이 실제로는
 // 틀려 있었음 (클라우드 kmcState.roomNTemp와 대조해서 정정함).
 // room2(우칸), room4(하칸)는 재검증 결과 기존 값이 정확해서 그대로 둠.
+//
+// 2026-08-25 좌칸 재조사: 좌칸(2-door)은 기존에 알던 4개(맛지킴중/강/약,익힘) 외에
+// "냉장중/강/약"(값 3/4/5) 모드가 더 있다는 게 확인됨 (냉장고 터치판 직접 조작
+// 캡쳐로 발견, 앱 조작으로 write 커맨드까지 확보 완료).
+// "냉동"(값 6)은 여러 번 재시도했지만 write 커맨드가 전혀 캡쳐되지 않음 —
+// 냉장고 터치판에서 직접 눌러야만 진입되는 모드로 보이며, MQTT/앱에서는 선택 불가.
+// 그래서 냉동은 상태 read(현재값 표시)만 지원하고 write(선택)는 지원하지 않음.
 
 const ROOM1_COMMANDS = {
-    // 좌칸 (2-door compartment) - 옵션 4개만 있음
+    // 좌칸 (2-door compartment)
     맛지킴중: Buffer.from('aa0ff0e5000201ff0100010000c7bb', 'hex'),
     맛지킴강: Buffer.from('aa0ff0e5000201ff0100010001c6bb', 'hex'),
     맛지킴약: Buffer.from('aa0ff0e5000201ff0100010002c1bb', 'hex'),
+    냉장중: Buffer.from('aa0ff0e5000201ff0100010003c0bb', 'hex'),
+    냉장강: Buffer.from('aa0ff0e5000201ff0100010004c3bb', 'hex'),
+    냉장약: Buffer.from('aa0ff0e5000201ff0100010005c2bb', 'hex'),
     익힘: Buffer.from('aa0ff0e5000201ff0100010007ccbb', 'hex'),
+} as const
+
+// write 커맨드를 못 구한 상태값. select의 옵션 목록/상태 매핑에는 포함하되
+// setProperty에서는 취급하지 않아 MQTT로는 선택할 수 없고, 냉장고에서 이
+// 상태로 바뀌면 읽기만 됨.
+const ROOM1_READONLY_STATES = {
+    냉동: 6,
 } as const
 
 const ROOM2_COMMANDS = {
@@ -67,15 +84,20 @@ const NIGHT_ANTI_GLARE_COMMANDS = {
 // "현재 상태" 12바이트 청크 안에도 그대로 등장한다 (2026-08-25 캡쳐로 확인).
 // room1=chunk[1], room2=chunk[2], room3=chunk[3], room4=chunk[4],
 // onetouchfilter=chunk[6], door=chunk[8] (door는 기존에 이미 사용 중).
-function buildValueMap<T extends Record<string, Buffer>>(commands: T): Map<number, keyof T> {
-    const map = new Map<number, keyof T>()
+function buildValueMap<T extends Record<string, Buffer>>(commands: T): Map<number, string> {
+    const map = new Map<number, string>()
     for (const key of Object.keys(commands) as (keyof T)[]) {
-        map.set(commands[key][12], key)
+        map.set(commands[key][12], key as string)
     }
     return map
 }
 
 const ROOM1_VALUES = buildValueMap(ROOM1_COMMANDS)
+for (const [label, value] of Object.entries(ROOM1_READONLY_STATES)) {
+    ROOM1_VALUES.set(value, label)
+}
+const ROOM1_OPTIONS = [...Object.keys(ROOM1_COMMANDS), ...Object.keys(ROOM1_READONLY_STATES)]
+
 const ROOM2_VALUES = buildValueMap(ROOM2_COMMANDS)
 const ROOM3_VALUES = buildValueMap(ROOM3_COMMANDS)
 const ROOM4_VALUES = buildValueMap(ROOM4_COMMANDS)
@@ -99,7 +121,7 @@ export default class Device extends HADevice {
                         icon: 'mdi:fridge-outline',
                         command_topic: '$this/room1/set',
                         state_topic: '$this/room1',
-                        options: Object.keys(ROOM1_COMMANDS),
+                        options: ROOM1_OPTIONS,
                         optimistic: true,
                     },
                     room2: {
@@ -212,6 +234,8 @@ export default class Device extends HADevice {
     setProperty(prop: string, mqttValue: string) {
         switch (prop) {
             case 'room1':
+                // 냉동(ROOM1_READONLY_STATES)은 write 커맨드가 없어 여기서 무시됨 -
+                // 냉장고에서 상태가 바뀌면 read로만 반영되고, MQTT로는 선택 불가.
                 if (mqttValue in ROOM1_COMMANDS) {
                     this.thinq.send_packet(ROOM1_COMMANDS[mqttValue as keyof typeof ROOM1_COMMANDS])
                     this.HA.publishProperty(this.id, 'room1', mqttValue)
