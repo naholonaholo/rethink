@@ -200,8 +200,15 @@ export default class Device extends HADevice {
             //   current[6] = 원터치탈취(0/1), current[8] = door(0/1)
             // current[7], current[9], current[10], current[11]은 아직 미해독
             // (야간 눈부심 방지 관련으로 추정, 별도 조사 필요).
-            if (buf.length === 26 && buf[0] === 0x11 && buf[1] === 0xec) {
-                const current = buf.subarray(14, 26)
+            // buf는 항상 aa + len(1) + body + checksum(1) + bb 로 감싸진 통짜
+            // 프레임이다 (S5MPC.ts 스타일러 핸들러 참고). 원래 이 코드는 buf가
+            // 이미 body라고 잘못 가정하고 있어서 조건이 절대 매치되지 않았음 —
+            // door 상태가 계속 "알 수 없음"으로 남아있던 근본 원인도 바로 이것.
+            if (buf.length < 4 || buf[0] !== 0xaa || buf[buf.length - 1] !== 0xbb) return
+            const body = buf.subarray(2, buf.length - 2)
+
+            if (body.length === 26 && body[0] === 0x11 && body[1] === 0xec) {
+                const current = body.subarray(14, 26)
 
                 const doorOpen = current[8] === 0x01
                 this.publishProperty('door', doorOpen ? 'ON' : 'OFF')
