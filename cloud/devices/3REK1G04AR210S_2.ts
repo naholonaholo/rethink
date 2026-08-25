@@ -61,6 +61,25 @@ const NIGHT_ANTI_GLARE_COMMANDS = {
     '70%': Buffer.from('aa1bf01002011a08180a06231a08181434000046ffffffffffadbb', 'hex'),
 } as const
 
+// --- 상태 read 프레임(11ec)용 역방향 매핑 -------------------------------
+// 커맨드 버퍼 포맷: aa 0f f0 e5 00 02 01 ff 01 00 [ROOM] 00 [VALUE] [checksum] bb
+// VALUE 바이트는 버퍼의 인덱스 12에 있고, 이 값이 11ec 상태 프레임의
+// "현재 상태" 12바이트 청크 안에도 그대로 등장한다 (2026-08-25 캡쳐로 확인).
+// room1=chunk[1], room2=chunk[2], room3=chunk[3], room4=chunk[4],
+// onetouchfilter=chunk[6], door=chunk[8] (door는 기존에 이미 사용 중).
+function buildValueMap<T extends Record<string, Buffer>>(commands: T): Map<number, keyof T> {
+    const map = new Map<number, keyof T>()
+    for (const key of Object.keys(commands) as (keyof T)[]) {
+        map.set(commands[key][12], key)
+    }
+    return map
+}
+
+const ROOM1_VALUES = buildValueMap(ROOM1_COMMANDS)
+const ROOM2_VALUES = buildValueMap(ROOM2_COMMANDS)
+const ROOM3_VALUES = buildValueMap(ROOM3_COMMANDS)
+const ROOM4_VALUES = buildValueMap(ROOM4_COMMANDS)
+
 export default class Device extends HADevice {
     constructor(
         HA: Connection,
@@ -151,12 +170,33 @@ export default class Device extends HADevice {
         thinq.on('data', (buf: Buffer) => {
             console.log(`[KIMCHI-RAW ${thinq.id}] len=${buf.length} hex=${buf.toString('hex')}`)
 
-            // 문 열림/닫힘 알림 프레임: 11ec + [이전상태 12바이트] + [현재상태 12바이트]
-            // 현재상태 청크(offset 14)의 offset 22 위치가 문 열림(1)/닫힘(0) 플래그.
-            // (2026-08-24 캡처, open/close 4회 사이클 모두 일치 확인)
+            // 상태 알림 프레임: 11ec + [이전상태 12바이트] + [현재상태 12바이트]
+            // "현재상태" 청크(offset 14부터)에 room1~4, 원터치탈취, door가
+            // 모두 들어있음 (2026-08-25 캡처, notes 마커와 대조하여 전부 확인):
+            //   current[1] = room1 값, current[2] = room2 값,
+            //   current[3] = room3 값, current[4] = room4 값,
+            //   current[6] = 원터치탈취(0/1), current[8] = door(0/1)
+            // current[7], current[9], current[10], current[11]은 아직 미해독
+            // (야간 눈부심 방지 관련으로 추정, 별도 조사 필요).
             if (buf.length === 26 && buf[0] === 0x11 && buf[1] === 0xec) {
-                const doorOpen = buf[22] === 0x01
+                const current = buf.subarray(14, 26)
+
+                const doorOpen = current[8] === 0x01
                 this.publishProperty('door', doorOpen ? 'ON' : 'OFF')
+
+                const room1 = ROOM1_VALUES.get(current[1])
+                if (room1 !== undefined) this.publishProperty('room1', room1)
+
+                const room2 = ROOM2_VALUES.get(current[2])
+                if (room2 !== undefined) this.publishProperty('room2', room2)
+
+                const room3 = ROOM3_VALUES.get(current[3])
+                if (room3 !== undefined) this.publishProperty('room3', room3)
+
+                const room4 = ROOM4_VALUES.get(current[4])
+                if (room4 !== undefined) this.publishProperty('room4', room4)
+
+                this.publishProperty('onetouchfilter', current[6] === 0x01 ? 'ON' : 'OFF')
             }
         })
     }
