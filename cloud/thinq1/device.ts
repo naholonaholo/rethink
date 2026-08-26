@@ -5,7 +5,9 @@ import { getDeviceMetadata } from './http'
 import { Metadata } from '../thinq'
 import { randomUUID } from 'node:crypto'
 
-type ConWithExtra = Connection & {
+// http.ts가 diagmon 이벤트를 해당 기기의 Device 인스턴스로 라우팅할 때
+// con.deviceObj에 접근해야 해서 export 함 (기존엔 이 파일 내부 전용이었음).
+export type ConWithExtra = Connection & {
     deviceObj?: Device
 }
 
