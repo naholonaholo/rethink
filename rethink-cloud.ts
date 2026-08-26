@@ -90,10 +90,6 @@ const tlsServerOptions: tls.TlsOptions = {
 
 // Thinq1
 function t1setup(manager: DeviceManager) {
-    // diagmon 라우트가 이 acceptor의 connectionsById를 조회해야 해서
-    // HTTP 라우터 설정보다 먼저 생성한다.
-    const acceptor = new T1Acceptor()
-
     // Thinq1 HTTPS server
     const app = express()
     app.use(function (req, res, next) {
@@ -101,7 +97,7 @@ function t1setup(manager: DeviceManager) {
         next()
     })
 
-    app.use(thinq1Routes(config, acceptor))
+    app.use(thinq1Routes(config))
 
     // fallback
     app.use((req, res) => {
@@ -109,6 +105,7 @@ function t1setup(manager: DeviceManager) {
     })
 
     https.createServer(tlsServerOptions, app).listen(config.thinq1_https_port.bind)
+    const acceptor = new T1Acceptor()
     tls.createServer(tlsServerOptions, acceptor.accept.bind(acceptor)).listen(config.thinq1_port.bind)
     acceptor.on('newDevice', manager.accept.bind(manager))
 }
