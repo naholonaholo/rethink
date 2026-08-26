@@ -127,7 +127,7 @@ export default class Device extends HADevice {
         this.thinq.send({ Cmd: 'Mon', CmdOpt: 'Start' })
         this.monTimer = setInterval(() => {
             this.thinq.send({ Cmd: 'Mon', CmdOpt: 'Start' })
-        }, 40_000)
+        }, 10_000)
     }
 
     publishCache: Record<string, string | number> = {}
