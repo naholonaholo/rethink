@@ -42,17 +42,6 @@ import { type Metadata } from '../thinq'
 //   15:45:01 프레임에서 current[4] 8→9 (하칸꺼짐 조작 직후) → 하칸꺼짐 = 9
 // 다만 이번에도 write 커맨드(f0e5)는 캡쳐되지 않음 (터치판 직접 조작이라
 // room1 냉동, room3 중칸꺼짐과 동일하게 read-only 취급).
-//
-// 2026-08-25 야간 눈부심 방지 - 기존엔 캡처한 고정 hex(날짜정보 내장)를 그대로
-// 재사용해서 하루 지나면 기기가 무시하는 버그가 있었음. 원인/공식을 완전히
-// 해독해서(체크섬 = aa+길이+본문 합(&0xff) XOR 0x55, rethink 자체
-// util/packet-codec.ts의 aabbChecksum()과 동일 공식, 실측 검증 완료) 매번
-// 오늘 날짜로 새로 조립하도록 변경. 기존 select(사용안함/10%/30%/50%/70%)는
-// 그대로 두고, "시간설정"(커스텀 시작~종료 시각) 옵션과 그에 필요한
-// 시작/종료 시(時)·분 입력 엔티티 4개만 추가함.
-// 시각 인코딩: 이 기기는 자정이 아니라 오전 9시를 하루 경계로 씀
-//   (시각>=9시: enc=시각-9,날짜=그대로 / 시각<9시: enc=시각+15,날짜=하루전).
-// 상태 read(현재 모드/밝기)는 로컬 패킷에서 아직 못 찾아 optimistic 유지.
 
 const ROOM1_COMMANDS = {
     // 좌칸 (2-door compartment)
@@ -104,6 +93,16 @@ const ROOM4_COMMANDS = {
 const ONE_TOUCH_FILTER_COMMANDS = {
     0: Buffer.from('aa0ff0e5000201ff0100060000c2bb', 'hex'), // OFF
     1: Buffer.from('aa0ff0e5000201ff0100060001cdbb', 'hex'), // ON
+} as const
+
+// 야간 눈부심 방지 - captured with fixed "일몰에서 일출까지" schedule.
+// If a custom time schedule is ever needed, this would need a fresh capture.
+const NIGHT_ANTI_GLARE_COMMANDS = {
+    사용안함: Buffer.from('aa1bf01002000000000000000000000000000046ffffffffff5dbb', 'hex'),
+    '10%': Buffer.from('aa1bf01002011a08180a05351a0818143400000affffffffff98bb', 'hex'),
+    '30%': Buffer.from('aa1bf01002011a08180a060a1a0818143400001effffffffffe2bb', 'hex'),
+    '50%': Buffer.from('aa1bf01002011a08180a06161a08181434000032ffffffffff82bb', 'hex'),
+    '70%': Buffer.from('aa1bf01002011a08180a06231a08181434000046ffffffffffadbb', 'hex'),
 } as const
 
 // write 커맨드를 못 구한 상태값들. select의 옵션 목록/상태 매핑에는 포함하되
@@ -169,106 +168,7 @@ for (const [label, value] of Object.entries(ROOM4_READONLY_STATES)) {
 }
 const ROOM4_OPTIONS = [...Object.keys(ROOM4_COMMANDS), ...Object.keys(ROOM4_READONLY_STATES)]
 
-// 야간 눈부심 방지 - 앱 화면 구조(사용안함 / 일몰~일출[10~70%] / 시간설정[10~70%])
-// 그대로 드롭다운 하나에 9개 옵션으로 평탄화. 선택할 때마다 모드+밝기가 한 번에
-// 정해지므로 별도로 밝기를 "기억"해둘 필요가 없음. 날짜/체크섬은 매번 실시간 계산.
-const NIGHT_ANTI_GLARE_OPTIONS = [
-    '사용안함',
-    '일몰에서 일출까지 10%',
-    '일몰에서 일출까지 30%',
-    '일몰에서 일출까지 50%',
-    '일몰에서 일출까지 70%',
-    '시간설정 10%',
-    '시간설정 30%',
-    '시간설정 50%',
-    '시간설정 70%',
-] as const
-
-const NIGHT_BRIGHTNESS_BYTES: Record<string, number> = {
-    '10%': 0x0a,
-    '30%': 0x1e,
-    '50%': 0x32,
-    '70%': 0x46,
-}
-
-const NIGHT_OFF_COMMAND = Buffer.from('aa1bf01002000000000000000000000000000046ffffffffff5dbb', 'hex')
-
-function aabbChecksum(bytes: Buffer): number {
-    let sum = 0
-    for (const b of bytes) sum += b
-    return (sum & 0xff) ^ 0x55
-}
-
-// hour(0~23)를 "오전 9시를 하루의 경계로 삼는" 인코딩으로 변환.
-// dayOffset: 그 시각이 오늘(0) 기준 실제 달력으로 며칠 뒤인지.
-function encodeNightTime(hour: number, dayOffset: number, today: number): [number, number] {
-    if (hour >= 9) return [hour - 9, today + dayOffset]
-    return [hour + 24 - 9, today + dayOffset - 1]
-}
-
-function buildSunsetRiseCommand(brightnessByte: number): Buffer {
-    const today = new Date().getDate()
-    const body = Buffer.from('1002011a08190a05001a0819143500000affffffffff', 'hex')
-    body[6] = today
-    body[12] = today
-    body[17] = brightnessByte
-    const head = Buffer.from([0xaa, body.length + 4])
-    const withoutChecksum = Buffer.concat([head, body])
-    const checksum = aabbChecksum(withoutChecksum)
-    return Buffer.concat([withoutChecksum, Buffer.from([checksum, 0xbb])])
-}
-
-function buildCustomCommand(
-    startHour: number,
-    startMin: number,
-    endHour: number,
-    endMin: number,
-    brightnessByte: number,
-): Buffer {
-    const today = new Date().getDate()
-
-    const startTotal = startHour * 60 + startMin
-    const endTotal = endHour * 60 + endMin
-    const endDayOffset = endTotal <= startTotal ? 1 : 0
-
-    const [startEnc, startDay] = encodeNightTime(startHour, 0, today)
-    const [endEnc, endDay] = encodeNightTime(endHour, endDayOffset, today)
-
-    const body = Buffer.alloc(23)
-    body[0] = 0xf0
-    body[1] = 0x10
-    body[2] = 0x02
-    body[3] = 0x02
-    body[4] = 0x1a
-    body[5] = 0x08
-    body[6] = startDay
-    body[7] = startEnc
-    body[8] = startMin
-    body[9] = 0x00
-    body[10] = 0x1a
-    body[11] = 0x08
-    body[12] = endDay
-    body[13] = endEnc
-    body[14] = endMin
-    body[15] = 0x00
-    body[16] = 0x00
-    body[17] = brightnessByte
-    body[18] = body[19] = body[20] = body[21] = body[22] = 0xff
-
-    const head = Buffer.from([0xaa, body.length + 4])
-    const withoutChecksum = Buffer.concat([head, body])
-    const checksum = aabbChecksum(withoutChecksum)
-    return Buffer.concat([withoutChecksum, Buffer.from([checksum, 0xbb])])
-}
-
 export default class Device extends HADevice {
-    // "시간설정" 선택 시 사용할 시작/종료 시각과 밝기. number 엔티티에서 값이
-    // 바뀔 때마다 여기 캐시해두고, nightantiglare가 "시간설정"일 때만 이 값으로 전송.
-    nightCustomStartHour = 21
-    nightCustomStartMin = 0
-    nightCustomEndHour = 6
-    nightCustomEndMin = 0
-
     constructor(
         HA: Connection,
         readonly thinq: Thinq2Device,
@@ -330,68 +230,14 @@ export default class Device extends HADevice {
                         optimistic: true,
                     },
                     nightantiglare: {
-                        // unique_id는 기존 그대로 유지 - 바꾸면 HA가 새 엔티티로 인식해서
-                        // 기존에 대시보드/자동화에서 쓰던 참조가 다 끊어짐.
                         platform: 'select',
                         unique_id: '$deviceid-nightantiglare',
                         name: '야간 눈부심 방지',
                         icon: 'mdi:weather-night',
                         command_topic: '$this/nightantiglare/set',
                         state_topic: '$this/nightantiglare',
-                        options: [...NIGHT_ANTI_GLARE_OPTIONS],
+                        options: Object.keys(NIGHT_ANTI_GLARE_COMMANDS),
                         optimistic: true,
-                    },
-                    nightantiglare_start_hour: {
-                        platform: 'number',
-                        unique_id: '$deviceid-nightantiglare_start_hour',
-                        name: '야간모드 시작 시(時)',
-                        icon: 'mdi:clock-start',
-                        command_topic: '$this/nightantiglare_start_hour/set',
-                        state_topic: '$this/nightantiglare_start_hour',
-                        min: 0,
-                        max: 23,
-                        step: 1,
-                        optimistic: true,
-                        entity_category: 'config',
-                    },
-                    nightantiglare_start_min: {
-                        platform: 'number',
-                        unique_id: '$deviceid-nightantiglare_start_min',
-                        name: '야간모드 시작 분',
-                        icon: 'mdi:clock-start',
-                        command_topic: '$this/nightantiglare_start_min/set',
-                        state_topic: '$this/nightantiglare_start_min',
-                        min: 0,
-                        max: 59,
-                        step: 1,
-                        optimistic: true,
-                        entity_category: 'config',
-                    },
-                    nightantiglare_end_hour: {
-                        platform: 'number',
-                        unique_id: '$deviceid-nightantiglare_end_hour',
-                        name: '야간모드 종료 시(時)',
-                        icon: 'mdi:clock-end',
-                        command_topic: '$this/nightantiglare_end_hour/set',
-                        state_topic: '$this/nightantiglare_end_hour',
-                        min: 0,
-                        max: 23,
-                        step: 1,
-                        optimistic: true,
-                        entity_category: 'config',
-                    },
-                    nightantiglare_end_min: {
-                        platform: 'number',
-                        unique_id: '$deviceid-nightantiglare_end_min',
-                        name: '야간모드 종료 분',
-                        icon: 'mdi:clock-end',
-                        command_topic: '$this/nightantiglare_end_min/set',
-                        state_topic: '$this/nightantiglare_end_min',
-                        min: 0,
-                        max: 59,
-                        step: 1,
-                        optimistic: true,
-                        entity_category: 'config',
                     },
                     door: {
                         // 좌/우/중/하칸 구분 없이 "문 중 하나라도 열림"을 나타내는
@@ -494,59 +340,12 @@ export default class Device extends HADevice {
                 this.HA.publishProperty(this.id, 'onetouchfilter', mqttValue)
                 return
             }
-            case 'nightantiglare': {
-                if (!(NIGHT_ANTI_GLARE_OPTIONS as readonly string[]).includes(mqttValue)) return
-
-                let packet: Buffer
-                if (mqttValue === '사용안함') {
-                    packet = NIGHT_OFF_COMMAND
-                } else if (mqttValue.startsWith('시간설정 ')) {
-                    const brightnessLabel = mqttValue.replace('시간설정 ', '')
-                    packet = buildCustomCommand(
-                        this.nightCustomStartHour,
-                        this.nightCustomStartMin,
-                        this.nightCustomEndHour,
-                        this.nightCustomEndMin,
-                        NIGHT_BRIGHTNESS_BYTES[brightnessLabel],
-                    )
-                } else {
-                    // '일몰에서 일출까지 10%' 등
-                    const brightnessLabel = mqttValue.replace('일몰에서 일출까지 ', '')
-                    packet = buildSunsetRiseCommand(NIGHT_BRIGHTNESS_BYTES[brightnessLabel])
+            case 'nightantiglare':
+                if (mqttValue in NIGHT_ANTI_GLARE_COMMANDS) {
+                    this.thinq.send_packet(NIGHT_ANTI_GLARE_COMMANDS[mqttValue as keyof typeof NIGHT_ANTI_GLARE_COMMANDS])
+                    this.HA.publishProperty(this.id, 'nightantiglare', mqttValue)
                 }
-
-                this.thinq.send_packet(packet)
-                this.HA.publishProperty(this.id, 'nightantiglare', mqttValue)
                 return
-            }
-            case 'nightantiglare_start_hour': {
-                const v = Number(mqttValue)
-                if (!Number.isFinite(v) || v < 0 || v > 23) return
-                this.nightCustomStartHour = v
-                this.HA.publishProperty(this.id, 'nightantiglare_start_hour', v)
-                return
-            }
-            case 'nightantiglare_start_min': {
-                const v = Number(mqttValue)
-                if (!Number.isFinite(v) || v < 0 || v > 59) return
-                this.nightCustomStartMin = v
-                this.HA.publishProperty(this.id, 'nightantiglare_start_min', v)
-                return
-            }
-            case 'nightantiglare_end_hour': {
-                const v = Number(mqttValue)
-                if (!Number.isFinite(v) || v < 0 || v > 23) return
-                this.nightCustomEndHour = v
-                this.HA.publishProperty(this.id, 'nightantiglare_end_hour', v)
-                return
-            }
-            case 'nightantiglare_end_min': {
-                const v = Number(mqttValue)
-                if (!Number.isFinite(v) || v < 0 || v > 59) return
-                this.nightCustomEndMin = v
-                this.HA.publishProperty(this.id, 'nightantiglare_end_min', v)
-                return
-            }
         }
         super.setProperty(prop, mqttValue)
     }
