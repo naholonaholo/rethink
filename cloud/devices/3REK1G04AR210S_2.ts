@@ -95,16 +95,6 @@ const ONE_TOUCH_FILTER_COMMANDS = {
     1: Buffer.from('aa0ff0e5000201ff0100060001cdbb', 'hex'), // ON
 } as const
 
-// 야간 눈부심 방지 - captured with fixed "일몰에서 일출까지" schedule.
-// If a custom time schedule is ever needed, this would need a fresh capture.
-const NIGHT_ANTI_GLARE_COMMANDS = {
-    사용안함: Buffer.from('aa1bf01002000000000000000000000000000046ffffffffff5dbb', 'hex'),
-    '10%': Buffer.from('aa1bf01002011a08180a05351a0818143400000affffffffff98bb', 'hex'),
-    '30%': Buffer.from('aa1bf01002011a08180a060a1a0818143400001effffffffffe2bb', 'hex'),
-    '50%': Buffer.from('aa1bf01002011a08180a06161a08181434000032ffffffffff82bb', 'hex'),
-    '70%': Buffer.from('aa1bf01002011a08180a06231a08181434000046ffffffffffadbb', 'hex'),
-} as const
-
 // write 커맨드를 못 구한 상태값들. select의 옵션 목록/상태 매핑에는 포함하되
 // setProperty에서는 취급하지 않아 MQTT로는 선택할 수 없고, 냉장고에서 이
 // 상태로 바뀌면 읽기로만 반영된다.
@@ -229,16 +219,6 @@ export default class Device extends HADevice {
                         state_topic: '$this/onetouchfilter',
                         optimistic: true,
                     },
-                    nightantiglare: {
-                        platform: 'select',
-                        unique_id: '$deviceid-nightantiglare',
-                        name: '야간 눈부심 방지',
-                        icon: 'mdi:weather-night',
-                        command_topic: '$this/nightantiglare/set',
-                        state_topic: '$this/nightantiglare',
-                        options: Object.keys(NIGHT_ANTI_GLARE_COMMANDS),
-                        optimistic: true,
-                    },
                     door: {
                         // 좌/우/중/하칸 구분 없이 "문 중 하나라도 열림"을 나타내는
                         // 단일 플래그. 2026-08-24 캡처에서 4개 칸 전부 open/close
@@ -340,12 +320,6 @@ export default class Device extends HADevice {
                 this.HA.publishProperty(this.id, 'onetouchfilter', mqttValue)
                 return
             }
-            case 'nightantiglare':
-                if (mqttValue in NIGHT_ANTI_GLARE_COMMANDS) {
-                    this.thinq.send_packet(NIGHT_ANTI_GLARE_COMMANDS[mqttValue as keyof typeof NIGHT_ANTI_GLARE_COMMANDS])
-                    this.HA.publishProperty(this.id, 'nightantiglare', mqttValue)
-                }
-                return
         }
         super.setProperty(prop, mqttValue)
     }
