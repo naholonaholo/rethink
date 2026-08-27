@@ -169,9 +169,20 @@ for (const [label, value] of Object.entries(ROOM4_READONLY_STATES)) {
 }
 const ROOM4_OPTIONS = [...Object.keys(ROOM4_COMMANDS), ...Object.keys(ROOM4_READONLY_STATES)]
 
-// 야간 눈부심 방지 - 기존 select의 옵션(사용안함/10%/30%/50%/70%)은 그대로
-// 유지하고, "시간설정" 옵션 하나만 추가함. 날짜/체크섬은 보낼 때마다 실시간 계산.
-const NIGHT_ANTI_GLARE_OPTIONS = ['사용안함', '10%', '30%', '50%', '70%', '시간설정'] as const
+// 야간 눈부심 방지 - 앱 화면 구조(사용안함 / 일몰~일출[10~70%] / 시간설정[10~70%])
+// 그대로 드롭다운 하나에 9개 옵션으로 평탄화. 선택할 때마다 모드+밝기가 한 번에
+// 정해지므로 별도로 밝기를 "기억"해둘 필요가 없음. 날짜/체크섬은 매번 실시간 계산.
+const NIGHT_ANTI_GLARE_OPTIONS = [
+    '사용안함',
+    '일몰에서 일출까지 10%',
+    '일몰에서 일출까지 30%',
+    '일몰에서 일출까지 50%',
+    '일몰에서 일출까지 70%',
+    '시간설정 10%',
+    '시간설정 30%',
+    '시간설정 50%',
+    '시간설정 70%',
+] as const
 
 const NIGHT_BRIGHTNESS_BYTES: Record<string, number> = {
     '10%': 0x0a,
@@ -257,7 +268,6 @@ export default class Device extends HADevice {
     nightCustomStartMin = 0
     nightCustomEndHour = 6
     nightCustomEndMin = 0
-    nightCustomBrightness = '10%'
 
     constructor(
         HA: Connection,
@@ -490,19 +500,19 @@ export default class Device extends HADevice {
                 let packet: Buffer
                 if (mqttValue === '사용안함') {
                     packet = NIGHT_OFF_COMMAND
-                } else if (mqttValue === '시간설정') {
+                } else if (mqttValue.startsWith('시간설정 ')) {
+                    const brightnessLabel = mqttValue.replace('시간설정 ', '')
                     packet = buildCustomCommand(
                         this.nightCustomStartHour,
                         this.nightCustomStartMin,
                         this.nightCustomEndHour,
                         this.nightCustomEndMin,
-                        NIGHT_BRIGHTNESS_BYTES[this.nightCustomBrightness],
+                        NIGHT_BRIGHTNESS_BYTES[brightnessLabel],
                     )
                 } else {
-                    // 10% / 30% / 50% / 70% - 일몰~일출 모드, 밝기값 기억해뒀다가
-                    // "시간설정" 전환 시 재사용
-                    this.nightCustomBrightness = mqttValue
-                    packet = buildSunsetRiseCommand(NIGHT_BRIGHTNESS_BYTES[mqttValue])
+                    // '일몰에서 일출까지 10%' 등
+                    const brightnessLabel = mqttValue.replace('일몰에서 일출까지 ', '')
+                    packet = buildSunsetRiseCommand(NIGHT_BRIGHTNESS_BYTES[brightnessLabel])
                 }
 
                 this.thinq.send_packet(packet)
