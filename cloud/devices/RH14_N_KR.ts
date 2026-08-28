@@ -2,6 +2,18 @@
 // LG 건조기 (RH14_N_KR) - 상태조회 전용 핸들러
 // thinq2 프로토콜: 기기가 상태 변화마다 스스로 aabb 프레임을 push하므로
 // 별도 폴링 없이 thinq.on('data', ...)만으로 충분함. 원격제어는 구현하지 않음.
+//
+// 2026-08-27 실측 캡처(dryer-capture.jsonl)로 두 가지 수정:
+// 1) payload[3],[4]와 payload[5],[6]의 역할이 반대로 되어 있었음.
+//    - payload[3],[4] (기존 setHour/Minute)  -> 실제로는 1분마다 줄어드는 "남은시간"
+//    - payload[5],[6] (기존 remainHour/Minute) -> 실제로는 코스 시작 직후 한 번 정해지고
+//      끝까지 고정되는 "예정 총 소요시간" (세탁기 핸들러의 initial_time과 동일 개념)
+//    실측: 15:01:43 남은시간이 1:05로 보정된 뒤, 15:24:55에 0:26까지 착실히
+//    줄어드는 동안 예정시간 필드는 1:05로 끝까지 고정됨.
+// 2) 종료 시퀀스에서 등장하는 미해독 값 확정:
+//    - state 0x04 = 완료 직후, 완전히 꺼지기 전 짧은 "완료 알림" 상태
+//    - process_state 0x07 = state 0x04와 동시 등장하는 완료 하위 상태
+//    - course 0x00 = 꺼짐/코스 미선택 상태에서 나오는 값 (에러 아님)
 
 import HADevice from './base'
 import { Device as Thinq2Device } from '../thinq2/device'
@@ -14,9 +26,11 @@ const STATE_CODES: Record<number, string> = {
     0x01: 'idle',
     0x02: 'running',
     0x03: 'paused',
+    0x04: 'finished', // 완료 직후 짧은 알림 상태 (2026-08-27 캡처로 확인)
 }
 
 const COURSE_CODES: Record<number, string> = {
+    0x00: '없음', // 꺼짐/코스 미선택
     0x02: '타월',
     0x04: '이불',
     0x05: '셔츠',
@@ -53,6 +67,7 @@ const PROCESS_STATE_CODES: Record<number, string> = {
     0x03: 'dry_lv2',
     0x04: 'dry_lv3',
     0x05: 'cool',
+    0x07: 'finished', // state 0x04와 함께 등장하는 완료 하위 상태 (추정, 재확인 필요)
 }
 
 export default class Device extends HADevice {
@@ -85,6 +100,14 @@ export default class Device extends HADevice {
                         unique_id: '$deviceid-remaining_time',
                         state_topic: '$this/remaining_time',
                         name: 'Remaining time',
+                        device_class: 'duration',
+                        unit_of_measurement: 'min',
+                    },
+                    initial_time: {
+                        platform: 'sensor',
+                        unique_id: '$deviceid-initial_time',
+                        state_topic: '$this/initial_time',
+                        name: 'Initial time',
                         device_class: 'duration',
                         unit_of_measurement: 'min',
                     },
@@ -154,10 +177,12 @@ export default class Device extends HADevice {
 
     parsePayload(payload: Buffer) {
         const stateCode = payload[2]
-        const setHour = payload[3]
-        const setMinute = payload[4]
-        const remainHour = payload[5]
-        const remainMinute = payload[6]
+        // 2026-08-27 정정: payload[3],[4]가 실제 "남은시간"(1분마다 감소),
+        // payload[5],[6]이 "예정 총 소요시간"(코스 시작 직후 고정) - 기존 이름과 반대였음
+        const remainHour = payload[3]
+        const remainMinute = payload[4]
+        const initialHour = payload[5]
+        const initialMinute = payload[6]
         const courseCode = payload[7]
         const dryLevelCode = payload[9]
         const ecoHybridCode = payload[10]
@@ -165,12 +190,13 @@ export default class Device extends HADevice {
         const antiCrease = (payload[16] & 0x02) !== 0
         const smartCare = (payload[17] & 0x20) !== 0
 
-        const running = stateCode === 0x02 || stateCode === 0x03
-        const remainMinutes = running ? remainHour * 60 + remainMinute : setHour * 60 + setMinute
+        const remainMinutes = remainHour * 60 + remainMinute
+        const initialMinutes = initialHour * 60 + initialMinute
 
         this.publishProperty('state', STATE_CODES[stateCode] ?? `unknown_0x${stateCode.toString(16)}`)
         this.publishProperty('course', COURSE_CODES[courseCode] ?? `unknown_0x${courseCode.toString(16)}`)
         this.publishProperty('remaining_time', remainMinutes)
+        this.publishProperty('initial_time', initialMinutes)
         this.publishProperty('process_state', PROCESS_STATE_CODES[processStateCode] ?? `unknown_0x${processStateCode.toString(16)}`)
         this.publishProperty('dry_level', DRY_LEVEL_CODES[dryLevelCode] ?? `unknown_0x${dryLevelCode.toString(16)}`)
         this.publishProperty('eco_hybrid', ECO_HYBRID_CODES[ecoHybridCode] ?? `unknown_0x${ecoHybridCode.toString(16)}`)
