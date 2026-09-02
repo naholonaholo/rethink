@@ -106,7 +106,12 @@ function t1setup(manager: DeviceManager) {
 
     https.createServer(tlsServerOptions, app).listen(config.thinq1_https_port.bind)
     const acceptor = new T1Acceptor()
-    tls.createServer(tlsServerOptions, acceptor.accept.bind(acceptor)).listen(config.thinq1_port.bind)
+    // tls.createServer(tlsServerOptions, acceptor.accept.bind(acceptor)).listen(config.thinq1_port.bind)
+    //아래와 같이 수정, 60초마다 신호 주고 받아서 신호 끊김 방지
+    tls.createServer(tlsServerOptions, (socket) => {
+        socket.setKeepAlive(true, 60_000)
+        acceptor.accept(socket)
+    }).listen(config.thinq1_port.bind)
     acceptor.on('newDevice', manager.accept.bind(manager))
 }
 
@@ -134,11 +139,22 @@ function t2setup(manager: DeviceManager) {
     // internal MQTT broker
     const broker = new Broker()
 
+    // if (config.mqtt) {
+        // tls.createServer(tlsServerOptions, broker.accept.bind(broker)).listen(config.mqtts_port.bind)
+        // net.createServer({}, broker.accept.bind(broker)).listen(config.mqtt_port.bind)
+    // }
+    //아래와 같이 수정, 60초마다 신호 주고 받아서 신호 끊김 방지
     if (config.mqtt) {
-        tls.createServer(tlsServerOptions, broker.accept.bind(broker)).listen(config.mqtts_port.bind)
-        net.createServer({}, broker.accept.bind(broker)).listen(config.mqtt_port.bind)
-    }
+        tls.createServer(tlsServerOptions, (socket) => {
+            socket.setKeepAlive(true, 60_000)
+            broker.accept(socket)
+        }).listen(config.mqtts_port.bind)
 
+        net.createServer({}, (socket) => {
+            socket.setKeepAlive(true, 60_000)
+            broker.accept(socket)
+        }).listen(config.mqtt_port.bind)
+    }
     const acceptor = new T2Acceptor(broker)
     acceptor.on('newDevice', manager.accept.bind(manager))
 }
